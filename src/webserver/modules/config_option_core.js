@@ -46,6 +46,8 @@ var IMAGE_ICON_OPTION = cardContractOptionName("image_icon");
 var IMAGE_MODAL_MODE_OPTION = cardContractOptionName("image_modal_mode");
 var IMAGE_REFRESH_OPTION = cardContractOptionName("image_refresh");
 var IMAGE_REFRESH_MODE_OPTION = cardContractOptionName("image_refresh_mode");
+var CARD_BACKGROUND_IMAGE_OPTION = cardContractOptionName("bg_image");
+var CARD_BACKGROUND_DIM_OPTION = cardContractOptionName("bg_dim");
 var LIGHT_CONTROL_TABS_OPTION = cardContractOptionName("light_tabs");
 var COVER_CONTROL_TABS_OPTION = cardContractOptionName("cover_tabs");
 var CLIMATE_CONTROL_TABS_OPTION = cardContractOptionName("climate_tabs");
@@ -114,6 +116,79 @@ function copyLargeNumbersOption(out, options) {
   }
   return out;
 }
+
+var _cardImageLibrary = [];
+
+function cardBackgroundSupported(b) {
+  if (!b) return false;
+  var type = b.type || "";
+  return type === "" || type === "action" || type === "push" || type === "media" ||
+    type === "light_switch" || type === "internal" || type === "subpage" ||
+    type === "garage" || type === "vacuum";
+}
+
+function normalizeCardBackgroundImageId(value) {
+  value = String(value || "").trim().toLowerCase();
+  return /^[a-z0-9-]{1,40}$/.test(value) ? value : "";
+}
+
+function normalizeCardBackgroundDim(value) {
+  var parsed = parseInt(value, 10);
+  if (!isFinite(parsed)) return "45";
+  if (parsed < 0) parsed = 0;
+  if (parsed > 90) parsed = 90;
+  return String(parsed);
+}
+
+function cardBackgroundImage(options) {
+  return normalizeCardBackgroundImageId(configOptionValue(options, CARD_BACKGROUND_IMAGE_OPTION));
+}
+
+function cardBackgroundDim(options) {
+  return normalizeCardBackgroundDim(configOptionValue(options, CARD_BACKGROUND_DIM_OPTION) || "45");
+}
+
+function cardImageUrl(id) {
+  id = normalizeCardBackgroundImageId(id);
+  return id ? "/card-images/" + id + ".jpg" : "";
+}
+
+function listCardImages(force) {
+  if (!force && _cardImageLibrary.length) return Promise.resolve(_cardImageLibrary.slice());
+  return fetch("/api/card-images")
+    .then(function (response) {
+      if (!response.ok) throw new Error("Could not load images.");
+      return response.json();
+    })
+    .then(function (data) {
+      _cardImageLibrary = data && data.images ? data.images : [];
+      return _cardImageLibrary.slice();
+    });
+}
+
+function uploadCardImage(file) {
+  var body = new FormData();
+  body.append("file", file);
+  return fetch("/api/card-images", { method: "POST", body: body })
+    .then(function (response) {
+      if (!response.ok) throw new Error("Could not upload image.");
+      return response.json();
+    })
+    .then(function (item) {
+      if (!item || !item.id) throw new Error("Could not upload image.");
+      return item;
+    });
+}
+
+function deleteCardImage(id) {
+  id = normalizeCardBackgroundImageId(id);
+  if (!id) return Promise.resolve();
+  return fetch("/api/card-images/" + id, { method: "DELETE" })
+    .then(function (response) {
+      if (!response.ok) throw new Error("Could not delete image.");
+    });
+}
+
 function cardContractOptionSpec(type, name) {
   var options = cardContractOptions(type);
   for (var i = 0; i < options.length; i++) {
