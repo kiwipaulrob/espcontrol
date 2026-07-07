@@ -148,6 +148,14 @@ function cardBackgroundDim(options) {
   return normalizeCardBackgroundDim(configOptionValue(options, CARD_BACKGROUND_DIM_OPTION) || "45");
 }
 
+function copyCardBackgroundOptions(out, sourceOptions, b) {
+  if (!cardBackgroundSupported(b)) return out || "";
+  var id = cardBackgroundImage(sourceOptions);
+  if (!id) return out || "";
+  out = setConfigOptionValue(out || "", CARD_BACKGROUND_IMAGE_OPTION, id);
+  return setConfigOptionValue(out, CARD_BACKGROUND_DIM_OPTION, cardBackgroundDim(sourceOptions));
+}
+
 function cardImageUrl(id) {
   id = normalizeCardBackgroundImageId(id);
   return id ? "/card-images/" + id + ".jpg" : "";
@@ -167,9 +175,11 @@ function listCardImages(force) {
 }
 
 function uploadCardImage(file) {
-  var body = new FormData();
-  body.append("file", file);
-  return fetch("/api/card-images", { method: "POST", body: body })
+  return fetch("/api/card-images", {
+    method: "POST",
+    headers: { "Content-Type": "image/jpeg" },
+    body: file,
+  })
     .then(function (response) {
       if (!response.ok) throw new Error("Could not upload image.");
       return response.json();
