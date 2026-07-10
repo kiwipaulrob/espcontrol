@@ -4,6 +4,18 @@
 
 // ── Home Assistant actions ────────────────────────────────────────────
 
+inline std::function<void(lv_obj_t *)> &button_grid_screen_load_callback() {
+  static std::function<void(lv_obj_t *)> callback = nullptr;
+  return callback;
+}
+
+inline void button_grid_load_screen(lv_obj_t *screen) {
+  if (!screen) return;
+  lv_scr_load_anim(screen, LV_SCR_LOAD_ANIM_NONE, 0, 0, false);
+  auto &callback = button_grid_screen_load_callback();
+  if (callback) callback(screen);
+}
+
 inline bool is_button_entity(const std::string &entity_id) {
   return entity_id.size() > 7 && entity_id.compare(0, 7, "button.") == 0;
 }
@@ -849,8 +861,7 @@ inline void handle_button_click(const std::string &cfg, int slot_num,
     ha_action_send(req);
   } else if (p.type == "subpage") {
     lv_obj_t *sub_scr = (lv_obj_t *)lv_obj_get_user_data(btn_obj);
-    if (sub_scr)
-      lv_scr_load_anim(sub_scr, LV_SCR_LOAD_ANIM_NONE, 0, 0, false);
+    if (sub_scr) button_grid_load_screen(sub_scr);
   } else if (p.type == "alarm") {
     AlarmCardCtx *ctx = (AlarmCardCtx *)lv_obj_get_user_data(btn_obj);
     if (alarm_card_context_valid(ctx)) alarm_card_open_page(ctx);
