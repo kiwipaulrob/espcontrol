@@ -725,6 +725,11 @@ inline bool image_card_position_widget(lv_obj_t *btn, lv_obj_t *widget,
   return true;
 }
 
+inline lv_obj_t *image_card_label_shadow(lv_obj_t *label, lv_obj_t *btn);
+inline void image_card_parent_offset_from_button(lv_obj_t *obj, lv_obj_t *btn,
+                                                 lv_coord_t &x, lv_coord_t &y,
+                                                 lv_coord_t &height);
+
 inline void card_background_move_content_foreground(const BtnSlot &s) {
   auto sync_shadow = [](lv_obj_t *target, lv_obj_t *btn, lv_coord_t x_offset, lv_coord_t y_offset) {
     if (!target || !btn || lv_obj_has_flag(target, LV_OBJ_FLAG_HIDDEN)) return;
