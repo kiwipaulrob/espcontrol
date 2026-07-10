@@ -125,8 +125,19 @@ inline std::vector<CardBackgroundWidgetRef> &card_background_widget_refs() {
   return refs;
 }
 
+inline lv_obj_t *&card_background_active_page() {
+  static lv_obj_t *page = nullptr;
+  return page;
+}
+
+inline lv_timer_t *&card_background_final_refresh_timer() {
+  static lv_timer_t *timer = nullptr;
+  return timer;
+}
+
 inline void image_card_schedule_source_refresh(ImageCardCtx *ctx, uint32_t delay_ms,
                                                const char *reason);
+inline bool card_background_widget_on_page(lv_obj_t *btn, lv_obj_t *page);
 
 inline ImageCardCtx *&image_card_active_download_context() {
   static ImageCardCtx *ctx = nullptr;
@@ -859,6 +870,37 @@ inline void card_background_apply_downloaded(CardBackgroundImageCtx *ctx) {
   // Invalidating the changed card is sufficient. Repainting the whole active
   // screen for every decoded image causes visible tearing on RGB displays.
   notify_dashboard_content_changed();
+
+  lv_obj_t *page = card_background_active_page();
+  if (!page || lv_scr_act() != page) return;
+  int expected = 0;
+  int ready = 0;
+  for (const auto &ref : card_background_widget_refs()) {
+    if (!card_background_widget_on_page(ref.btn, page)) continue;
+    expected++;
+    for (int i = 0; i < CARD_BACKGROUND_IMAGE_MAX_CONTEXTS; i++) {
+      CardBackgroundImageCtx *candidate = &card_background_image_contexts()[i];
+      if (!candidate->active || !candidate->requested_once) continue;
+      for (const auto &binding : candidate->bindings) {
+        if (binding.active && binding.widget == ref.widget) {
+          ready++;
+          break;
+        }
+      }
+    }
+  }
+  if (expected == 0 || ready != expected) return;
+
+  lv_timer_t *&refresh_timer = card_background_final_refresh_timer();
+  if (refresh_timer) lv_timer_del(refresh_timer);
+  refresh_timer = lv_timer_create([](lv_timer_t *timer) {
+    lv_obj_t *refresh_page = static_cast<lv_obj_t *>(lv_timer_get_user_data(timer));
+    lv_timer_del(timer);
+    card_background_final_refresh_timer() = nullptr;
+    if (!refresh_page || lv_scr_act() != refresh_page) return;
+    lv_obj_invalidate(refresh_page);
+    lv_refr_now(nullptr);
+  }, 50, page);
 }
 
 inline void card_background_handle_download_error(CardBackgroundImageCtx *ctx) {
@@ -910,6 +952,11 @@ inline bool card_background_context_has_active_bindings(CardBackgroundImageCtx *
 }
 
 inline void card_background_release_contexts(const GridConfig &cfg) {
+  lv_timer_t *&refresh_timer = card_background_final_refresh_timer();
+  if (refresh_timer) {
+    lv_timer_del(refresh_timer);
+    refresh_timer = nullptr;
+  }
   CardBackgroundImageCtx *contexts = card_background_image_contexts();
   int count = cfg.card_background_image_count;
   if (count > CARD_BACKGROUND_IMAGE_MAX_CONTEXTS) count = CARD_BACKGROUND_IMAGE_MAX_CONTEXTS;
@@ -940,6 +987,7 @@ inline void card_background_release_contexts(const GridConfig &cfg) {
 
 inline void reset_card_background_image_pool(const GridConfig &cfg) {
   card_background_release_contexts(cfg);
+  card_background_active_page() = nullptr;
   card_background_widget_refs().clear();
 }
 
@@ -1141,6 +1189,7 @@ inline void card_background_unregister_page(lv_obj_t *page) {
 
 inline void card_background_activate_page(const GridConfig &cfg, lv_obj_t *page) {
   if (!page) return;
+  card_background_active_page() = page;
   int total_refs = 0;
   int matched_refs = 0;
   int activated_refs = 0;
