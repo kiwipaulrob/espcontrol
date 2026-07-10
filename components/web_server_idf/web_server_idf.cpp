@@ -48,6 +48,7 @@ namespace esphome::web_server_idf {
 static const char *const TAG = "web_server_idf";
 static constexpr size_t CARD_IMAGE_MAX_BYTES = 80 * 1024;
 static constexpr size_t CARD_IMAGE_MAX_COUNT = 8;
+static constexpr size_t CARD_IMAGE_NAME_MAX_LENGTH = 40;
 static constexpr size_t CARD_IMAGE_FLASH_SECTOR_SIZE = 4096;
 static constexpr size_t CARD_IMAGE_SLOT_SIZE =
     ((CARD_IMAGE_MAX_BYTES + 128 + CARD_IMAGE_FLASH_SECTOR_SIZE - 1) / CARD_IMAGE_FLASH_SECTOR_SIZE) *
@@ -173,7 +174,8 @@ struct CardImageHeader {
   uint32_t size;
   uint32_t reserved;
   char id[48];
-  uint8_t padding[64];
+  char name[48];
+  uint8_t padding[16];
 };
 
 static_assert(sizeof(CardImageHeader) == 128, "Card image flash header must remain one flash-aligned block");
@@ -206,8 +208,50 @@ bool read_card_image_header(size_t slot, CardImageHeader &header) {
   if (header.magic != CARD_IMAGE_MAGIC || header.version != CARD_IMAGE_VERSION) return false;
   if (header.size == 0 || header.size > CARD_IMAGE_MAX_BYTES) return false;
   header.id[sizeof(header.id) - 1] = '\0';
+  header.name[sizeof(header.name) - 1] = '\0';
   if (!card_image_id_valid(header.id)) return false;
   return true;
+}
+
+std::string normalize_card_image_name(const std::string &value) {
+  std::string out;
+  out.reserve(std::min(value.size(), CARD_IMAGE_NAME_MAX_LENGTH));
+  bool previous_space = false;
+  for (char raw : value) {
+    unsigned char ch = static_cast<unsigned char>(raw);
+    if (ch < 0x20 || ch == 0x7F) continue;
+    if (raw == ',' || raw == ';') continue;
+    if (std::isspace(ch)) {
+      if (!out.empty() && !previous_space) {
+        out.push_back(' ');
+        previous_space = true;
+      }
+      continue;
+    }
+    out.push_back(raw);
+    previous_space = false;
+    if (out.size() >= CARD_IMAGE_NAME_MAX_LENGTH) break;
+  }
+  while (!out.empty() && out.back() == ' ') out.pop_back();
+  return out;
+}
+
+std::string card_image_display_name(const CardImageHeader &header) {
+  std::string name = normalize_card_image_name(header.name);
+  return name.empty() ? std::string(header.id) : name;
+}
+
+std::string card_image_item_json(const CardImageHeader &header) {
+  std::string body = "{\"id\":";
+  append_json_string(body, header.id);
+  body += ",\"name\":";
+  append_json_string(body, card_image_display_name(header).c_str());
+  body += ",\"size\":";
+  body += std::to_string(header.size);
+  body += ",\"url\":\"/card-images/";
+  body += header.id;
+  body += ".jpg\"}";
+  return body;
 }
 
 int find_card_image_slot(const std::string &id) {
@@ -216,6 +260,26 @@ int find_card_image_slot(const std::string &id) {
     if (read_card_image_header(slot, header) && id == header.id) return static_cast<int>(slot);
   }
   return -1;
+}
+
+esp_err_t update_card_image_name(const std::string &id, const std::string &name, CardImageHeader &header) {
+  int slot = find_card_image_slot(id);
+  const esp_partition_t *partition = card_image_partition();
+  if (slot < 0 || partition == nullptr || !read_card_image_header(static_cast<size_t>(slot), header)) {
+    return ESP_ERR_NOT_FOUND;
+  }
+  strlcpy(header.name, name.c_str(), sizeof(header.name));
+  size_t slot_offset = static_cast<size_t>(slot) * CARD_IMAGE_SLOT_SIZE;
+  std::unique_ptr<uint8_t[]> sector(new uint8_t[CARD_IMAGE_FLASH_SECTOR_SIZE]);
+  esp_err_t err = esp_partition_read(partition, slot_offset, sector.get(), CARD_IMAGE_FLASH_SECTOR_SIZE);
+  if (err == ESP_OK) {
+    memcpy(sector.get(), &header, sizeof(header));
+    err = esp_partition_erase_range(partition, slot_offset, CARD_IMAGE_FLASH_SECTOR_SIZE);
+  }
+  if (err == ESP_OK) {
+    err = esp_partition_write(partition, slot_offset, sector.get(), CARD_IMAGE_FLASH_SECTOR_SIZE);
+  }
+  return err;
 }
 
 int find_empty_card_image_slot() {
@@ -246,7 +310,7 @@ std::string card_image_list_json() {
     out += "{\"id\":";
     append_json_string(out, header.id);
     out += ",\"name\":";
-    append_json_string(out, header.id);
+    append_json_string(out, card_image_display_name(header).c_str());
     out += ",\"size\":";
     out += std::to_string(header.size);
     out += ",\"url\":\"/card-images/";
@@ -281,6 +345,31 @@ bool handle_card_image_get(AsyncWebServerRequest *request) {
   std::string url(request->url_to(url_buf));
   if (url == "/api/card-images") {
     std::string body = card_image_list_json();
+    request->send(200, "application/json", body.c_str());
+    return true;
+  }
+  static constexpr const char *rename_prefix = "/api/card-images/";
+  static constexpr const char *rename_suffix = "/rename";
+  if (url.rfind(rename_prefix, 0) == 0 && url.size() > strlen(rename_prefix) + strlen(rename_suffix) &&
+      url.compare(url.size() - strlen(rename_suffix), strlen(rename_suffix), rename_suffix) == 0) {
+    std::string id = url.substr(strlen(rename_prefix), url.size() - strlen(rename_prefix) - strlen(rename_suffix));
+    if (!card_image_id_valid(id)) {
+      request->send(404, "text/plain", "Not found");
+      return true;
+    }
+    std::string name = normalize_card_image_name(request->arg("name"));
+    CardImageHeader header {};
+    esp_err_t err = update_card_image_name(id, name, header);
+    if (err == ESP_ERR_NOT_FOUND) {
+      request->send(404, "text/plain", "Not found");
+      return true;
+    }
+    if (err != ESP_OK) {
+      ESP_LOGE(TAG, "Failed to update card image name: %s", esp_err_to_name(err));
+      request->send(500, "text/plain", "Rename failed");
+      return true;
+    }
+    std::string body = card_image_item_json(header);
     request->send(200, "application/json", body.c_str());
     return true;
   }
@@ -344,12 +433,47 @@ bool handle_card_image_delete(AsyncWebServerRequest *request) {
   return true;
 }
 
+bool handle_card_image_rename(AsyncWebServerRequest *request) {
+  if (request->method() != HTTP_POST) return false;
+  char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
+  std::string url(request->url_to(url_buf));
+  static constexpr const char *prefix = "/api/card-images/";
+  static constexpr const char *suffix = "/rename";
+  if (url.rfind(prefix, 0) != 0 || url.size() <= strlen(prefix) + strlen(suffix) ||
+      url.compare(url.size() - strlen(suffix), strlen(suffix), suffix) != 0) {
+    return false;
+  }
+  std::string id = url.substr(strlen(prefix), url.size() - strlen(prefix) - strlen(suffix));
+  if (!card_image_id_valid(id)) {
+    request->send(404, "text/plain", "Not found");
+    return true;
+  }
+  std::string name = normalize_card_image_name(request->arg("name"));
+  CardImageHeader header {};
+  esp_err_t err = update_card_image_name(id, name, header);
+  if (err == ESP_ERR_NOT_FOUND) {
+    request->send(404, "text/plain", "Not found");
+    return true;
+  }
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to update card image name: %s", esp_err_to_name(err));
+    request->send(500, "text/plain", "Rename failed");
+    return true;
+  }
+  std::string body = card_image_item_json(header);
+  request->send(200, "application/json", body.c_str());
+  return true;
+}
+
 bool is_card_image_shortcut_request(AsyncWebServerRequest *request) {
   if (request->method() != HTTP_GET && request->method() != HTTP_DELETE) return false;
   char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
   std::string url(request->url_to(url_buf));
   if (request->method() == HTTP_GET) {
-    return url == "/api/card-images" || url.rfind("/card-images/", 0) == 0;
+    return url == "/api/card-images" || url.rfind("/api/card-images/", 0) == 0 || url.rfind("/card-images/", 0) == 0;
+  }
+  if (request->method() == HTTP_POST) {
+    return url.rfind("/api/card-images/", 0) == 0;
   }
   return url.rfind("/api/card-images/", 0) == 0;
 }
@@ -419,6 +543,7 @@ esp_err_t handle_card_image_upload(httpd_req_t *r) {
   header.version = CARD_IMAGE_VERSION;
   header.size = r->content_len;
   strlcpy(header.id, id.c_str(), sizeof(header.id));
+  strlcpy(header.name, id.c_str(), sizeof(header.name));
   err = esp_partition_write(partition, slot_offset, &header, sizeof(header));
   if (err != ESP_OK) {
     esp_partition_erase_range(partition, slot_offset, CARD_IMAGE_SLOT_SIZE);
@@ -429,12 +554,63 @@ esp_err_t handle_card_image_upload(httpd_req_t *r) {
   std::string body = "{\"id\":";
   append_json_string(body, id.c_str());
   body += ",\"name\":";
-  append_json_string(body, id.c_str());
+  append_json_string(body, card_image_display_name(header).c_str());
   body += ",\"size\":";
   body += std::to_string(r->content_len);
   body += ",\"url\":\"/card-images/";
   body += id;
   body += ".jpg\"}";
+  httpd_resp_set_type(r, "application/json");
+  httpd_resp_sendstr(r, body.c_str());
+  return ESP_OK;
+}
+
+esp_err_t handle_card_image_rename_post(httpd_req_t *r) {
+  static constexpr const char *prefix = "/api/card-images/";
+  static constexpr const char *suffix = "/rename";
+  std::string url(r->uri);
+  const char *query = strchr(url.c_str(), '?');
+  if (query != nullptr) url.resize(static_cast<size_t>(query - url.c_str()));
+  if (url.rfind(prefix, 0) != 0 || url.size() <= strlen(prefix) + strlen(suffix) ||
+      url.compare(url.size() - strlen(suffix), strlen(suffix), suffix) != 0) {
+    return ESP_ERR_NOT_FOUND;
+  }
+  std::string id = url.substr(strlen(prefix), url.size() - strlen(prefix) - strlen(suffix));
+  if (!card_image_id_valid(id)) {
+    httpd_resp_send_err(r, HTTPD_404_NOT_FOUND, "Not found");
+    return ESP_OK;
+  }
+  if (r->content_len > 256) {
+    httpd_resp_send_err(r, HTTPD_400_BAD_REQUEST, "Name too long");
+    return ESP_OK;
+  }
+  std::string post_query;
+  if (r->content_len > 0) {
+    post_query.resize(r->content_len);
+    size_t received = 0;
+    while (received < r->content_len) {
+      int ret = httpd_req_recv(r, &post_query[received], r->content_len - received);
+      if (ret <= 0) {
+        httpd_resp_send_err(r, HTTPD_400_BAD_REQUEST, "Rename failed");
+        return ESP_OK;
+      }
+      received += static_cast<size_t>(ret);
+    }
+  }
+  auto parsed_name = query_key_value(post_query.c_str(), post_query.size(), "name");
+  std::string name = normalize_card_image_name(parsed_name.has_value() ? parsed_name.value() : "");
+  CardImageHeader header {};
+  esp_err_t err = update_card_image_name(id, name, header);
+  if (err == ESP_ERR_NOT_FOUND) {
+    httpd_resp_send_err(r, HTTPD_404_NOT_FOUND, "Not found");
+    return ESP_OK;
+  }
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to update card image name: %s", esp_err_to_name(err));
+    httpd_resp_send_err(r, HTTPD_500_INTERNAL_SERVER_ERROR, "Rename failed");
+    return ESP_OK;
+  }
+  std::string body = card_image_item_json(header);
   httpd_resp_set_type(r, "application/json");
   httpd_resp_sendstr(r, body.c_str());
   return ESP_OK;
@@ -574,6 +750,15 @@ esp_err_t AsyncWebServer::request_post_handler(httpd_req_t *r) {
 #endif
     return handle_card_image_upload(r);
   }
+  if (strncmp(r->uri, "/api/card-images/", strlen("/api/card-images/")) == 0) {
+#ifdef USE_WEBSERVER_AUTH
+    AsyncWebServerRequest req(r);
+    auto *server = static_cast<AsyncWebServer *>(r->user_ctx);
+    if (!server->authenticate_shortcut_request_(&req)) return ESP_OK;
+#endif
+    esp_err_t card_image_result = handle_card_image_rename_post(r);
+    if (card_image_result != ESP_ERR_NOT_FOUND) return card_image_result;
+  }
   auto content_type = request_get_header(r, "Content-Type");
 
   if (!request_has_header(r, "Content-Length")) {
@@ -647,7 +832,7 @@ esp_err_t AsyncWebServer::request_handler_(AsyncWebServerRequest *request) const
     if (!this->authenticate_shortcut_request_(request)) return ESP_OK;
 #endif
   }
-  if (handle_card_image_get(request) || handle_card_image_delete(request)) {
+  if (handle_card_image_get(request) || handle_card_image_delete(request) || handle_card_image_rename(request)) {
     return ESP_OK;
   }
   if (handle_firmware_version_request(request)) {

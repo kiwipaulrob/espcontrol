@@ -240,6 +240,20 @@ function uploadCardImage(file) {
     });
 }
 
+function renameCardImage(id, name) {
+  id = normalizeCardBackgroundImageId(id);
+  if (!id) return Promise.reject(new Error("Could not rename image."));
+  return fetch("/api/card-images/" + id + "/rename?name=" + encodeURIComponent(String(name || "")))
+    .then(function (response) {
+      if (!response.ok) {
+        return response.text().then(function (message) {
+          throw new Error(message || "Could not rename image.");
+        });
+      }
+      return response.json();
+    });
+}
+
 function deleteCardImage(id) {
   id = normalizeCardBackgroundImageId(id);
   if (!id) return Promise.resolve();

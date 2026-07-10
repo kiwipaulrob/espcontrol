@@ -87,6 +87,37 @@ function buildCardImageManagerCard() {
       meta.appendChild(detail);
       card.appendChild(meta);
 
+      var rename = document.createElement("div");
+      rename.className = "sp-card-image-rename";
+      var renameInput = textInput("", item.name || id, "Image name");
+      renameInput.setAttribute("aria-label", "Image name");
+      var renameBtn = createActionButton("sp-action-btn", "Rename", "pencil");
+      function saveRename() {
+        var value = renameInput.value.trim();
+        setBusy(true);
+        renameCardImage(id, value)
+          .then(function () { return listCardImages(true); })
+          .then(function (fresh) {
+            showBanner("Image renamed.", "success");
+            renderItems(fresh);
+            renderButtonSettings();
+          })
+          .catch(function (err) {
+            showBanner(err && err.message || "Could not rename image.", "error");
+          })
+          .then(function () { setBusy(false); });
+      }
+      renameBtn.addEventListener("click", saveRename);
+      renameInput.addEventListener("keydown", function (event) {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          saveRename();
+        }
+      });
+      rename.appendChild(renameInput);
+      rename.appendChild(renameBtn);
+      card.appendChild(rename);
+
       var del = createActionButton("sp-action-btn sp-card-image-delete", "Delete", "trash-can-outline");
       del.addEventListener("click", function () {
         var used = countCardImageUsage(id);

@@ -356,6 +356,9 @@ var CSS =
   ".sp-card-image-meta{display:grid;gap:4px;padding:10px;min-width:0}" +
   ".sp-card-image-name{color:var(--text);font-size:.84rem;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}" +
   ".sp-card-image-detail{color:var(--text3);font-size:.74rem}" +
+  ".sp-card-image-rename{margin:0 10px 8px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px}" +
+  ".sp-card-image-rename .sp-input{height:34px;padding:7px 9px;font-size:.8rem}" +
+  ".sp-card-image-rename .sp-action-btn{padding:7px 10px}" +
   ".sp-card-image-delete{justify-self:start;margin:0 10px 10px;padding:7px 10px}" +
 
   ".sp-icon-picker{position:relative}" +
