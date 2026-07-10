@@ -761,19 +761,12 @@ inline void card_background_move_content_foreground(const BtnSlot &s) {
     lv_label_set_long_mode(shadow, lv_label_get_long_mode(target));
     const char *text = lv_label_get_text(target);
     lv_label_set_text(shadow, text ? text : "");
-    lv_area_t target_area;
-    lv_area_t button_area;
-    lv_obj_get_coords(target, &target_area);
-    lv_obj_get_coords(btn, &button_area);
-    lv_obj_set_pos(
-      shadow,
-      target_area.x1 - button_area.x1 + x_offset,
-      target_area.y1 - button_area.y1 + y_offset);
     lv_obj_set_size(shadow, lv_obj_get_width(target), lv_obj_get_height(target));
     lv_obj_set_style_pad_left(shadow, lv_obj_get_style_pad_left(target, LV_PART_MAIN), LV_PART_MAIN);
     lv_obj_set_style_pad_right(shadow, lv_obj_get_style_pad_right(target, LV_PART_MAIN), LV_PART_MAIN);
     lv_obj_set_style_pad_top(shadow, lv_obj_get_style_pad_top(target, LV_PART_MAIN), LV_PART_MAIN);
     lv_obj_set_style_pad_bottom(shadow, lv_obj_get_style_pad_bottom(target, LV_PART_MAIN), LV_PART_MAIN);
+    lv_obj_align_to(shadow, target, LV_ALIGN_TOP_LEFT, x_offset, y_offset);
     lv_obj_clear_flag(shadow, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(shadow);
   };
