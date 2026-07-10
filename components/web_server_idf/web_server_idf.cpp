@@ -149,13 +149,6 @@ bool is_loopback_request(httpd_req_t *r) {
     auto *in = reinterpret_cast<sockaddr_in *>(&addr);
     return ntohl(in->sin_addr.s_addr) == INADDR_LOOPBACK;
   }
-#ifdef AF_INET6
-  if (addr.ss_family == AF_INET6) {
-    auto *in6 = reinterpret_cast<sockaddr_in6 *>(&addr);
-    static constexpr uint8_t LOOPBACK6[16] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
-    return memcmp(in6->sin6_addr.s6_addr, LOOPBACK6, sizeof(LOOPBACK6)) == 0;
-  }
-#endif
   return false;
 }
 
