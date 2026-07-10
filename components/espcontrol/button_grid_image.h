@@ -766,6 +766,7 @@ inline void card_background_move_content_foreground(const BtnSlot &s) {
       shadow = lv_label_create(btn);
       lv_obj_set_user_data(shadow, target);
     }
+    lv_obj_add_flag(shadow, CARD_TEXT_COLOR_PROTECTED_FLAG);
     const lv_font_t *font = lv_obj_get_style_text_font(target, LV_PART_MAIN);
     if (font) lv_obj_set_style_text_font(shadow, font, LV_PART_MAIN);
     lv_obj_set_style_text_color(shadow, lv_color_hex(0x000000), LV_PART_MAIN);
@@ -1616,6 +1617,7 @@ inline void image_card_configure_label(BtnSlot &s, const ParsedCfg &p) {
     shadow = lv_label_create(s.btn);
     lv_obj_set_user_data(shadow, s.text_lbl);
   }
+  lv_obj_add_flag(shadow, CARD_TEXT_COLOR_PROTECTED_FLAG);
   const lv_font_t *font = lv_obj_get_style_text_font(s.text_lbl, LV_PART_MAIN);
   if (font) lv_obj_set_style_text_font(shadow, font, LV_PART_MAIN);
   lv_obj_set_style_text_color(shadow, lv_color_hex(0x000000), LV_PART_MAIN);
