@@ -516,6 +516,7 @@ function buttonConfigFields(b) {
     unit = "";
     precision = "";
   }
+  options = copyCardBackgroundOptions(options, b && b.options, { type: type });
   return trimConfigFields([
     (type === "door_window" || type === "presence" || type === "screen_lock") ? "" : (b && b.entity || ""),
     label,

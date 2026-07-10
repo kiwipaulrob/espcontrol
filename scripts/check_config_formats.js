@@ -518,6 +518,26 @@ assert.strictEqual(
   "Kitchen, Main=Zone 50%",
   "media playlist player source keeps punctuation after parse and serialize"
 );
+const mediaBackgroundButton = {
+  entity: "media_player.office",
+  label: "Playlist",
+  icon: "Music",
+  icon_on: "Auto",
+  sensor: "playlist",
+  unit: "",
+  type: "media",
+  precision: "",
+  options: "playlist_content_id=spotify%3Aplaylist%3Aabc,bg_image=img-1121238-0,bg_dim=60",
+};
+const parsedMediaBackgroundButton = hooks.parseButtonConfig(hooks.serializeButtonConfig(mediaBackgroundButton));
+assert(
+  parsedMediaBackgroundButton.options.includes("bg_image=img-1121238-0"),
+  "media card background image survives serialization"
+);
+assert(
+  parsedMediaBackgroundButton.options.includes("bg_dim=60"),
+  "media card background dim survives serialization"
+);
 assert.strictEqual(
   hooks.normalizeMediaOptions("volume_max=40", "volume"),
   "volume_max=40",
