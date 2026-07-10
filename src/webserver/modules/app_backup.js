@@ -18,7 +18,87 @@ function backupExportFileDate(value) {
 function backupExportFileName(value) {
   var date = value || new Date();
   return "espcontrol-" + backupExportScreenSizeSlug(CFG.screenSize) + "-" +
-    backupExportFileDate(date) + ".json";
+    backupExportFileDate(date) + ".zip";
+}
+
+function backupZipCrc32(bytes) {
+  var crc = 0xFFFFFFFF;
+  for (var i = 0; i < bytes.length; i++) {
+    crc ^= bytes[i];
+    for (var bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ ((crc & 1) ? 0xEDB88320 : 0);
+  }
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
+function backupZipU16(value) {
+  return new Uint8Array([value & 255, (value >>> 8) & 255]);
+}
+
+function backupZipU32(value) {
+  return new Uint8Array([value & 255, (value >>> 8) & 255, (value >>> 16) & 255, (value >>> 24) & 255]);
+}
+
+// A small standards-compliant ZIP writer using stored entries. Images are
+// already JPEG-compressed, so deflating them would cost browser time without
+// making a meaningful difference to the backup size.
+function backupCreateZip(entries) {
+  var chunks = [];
+  var central = [];
+  var offset = 0;
+  entries.forEach(function (entry) {
+    var name = new TextEncoder().encode(entry.name);
+    var body = entry.bytes instanceof Uint8Array ? entry.bytes : new Uint8Array(entry.bytes);
+    var crc = backupZipCrc32(body);
+    var local = [backupZipU32(0x04034b50), backupZipU16(20), backupZipU16(0), backupZipU16(0),
+      backupZipU16(0), backupZipU16(0), backupZipU32(crc), backupZipU32(body.length),
+      backupZipU32(body.length), backupZipU16(name.length), backupZipU16(0), name, body];
+    chunks.push.apply(chunks, local);
+    var centralEntry = [backupZipU32(0x02014b50), backupZipU16(20), backupZipU16(20),
+      backupZipU16(0), backupZipU16(0), backupZipU16(0), backupZipU16(0), backupZipU32(crc),
+      backupZipU32(body.length), backupZipU32(body.length), backupZipU16(name.length), backupZipU16(0),
+      backupZipU16(0), backupZipU16(0), backupZipU16(0), backupZipU32(0), backupZipU32(offset), name];
+    central.push.apply(central, centralEntry);
+    offset += 30 + name.length + body.length;
+  });
+  var centralSize = central.reduce(function (total, part) { return total + part.length; }, 0);
+  chunks.push.apply(chunks, central);
+  chunks.push(backupZipU32(0x06054b50), backupZipU16(0), backupZipU16(0),
+    backupZipU16(entries.length), backupZipU16(entries.length), backupZipU32(centralSize),
+    backupZipU32(offset), backupZipU16(0));
+  return new Blob(chunks, { type: "application/zip" });
+}
+
+function backupDownload(blob, name) {
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+function backupImageArchiveEntries() {
+  return listCardImages(true).then(function (images) {
+    var manifest = { format: "espcontrol.card-images", version: 1, images: [] };
+    var entries = [];
+    return Promise.all((images || []).map(function (image) {
+      var id = normalizeCardBackgroundImageId(image && image.id);
+      if (!id) return Promise.resolve();
+      return fetch(cardImageUrl(id)).then(function (response) {
+        if (!response.ok) throw new Error("Could not read image " + (image.name || id));
+        return response.arrayBuffer();
+      }).then(function (buffer) {
+        var file = "images/" + id + ".jpg";
+        manifest.images.push({ id: id, name: String(image.name || id), file: file });
+        entries.push({ name: file, bytes: new Uint8Array(buffer) });
+      });
+    })).then(function () {
+      entries.unshift({ name: "images.json", bytes: new TextEncoder().encode(JSON.stringify(manifest, null, 2)) });
+      return entries;
+    });
+  });
 }
 
 function exportConfig() {
@@ -95,17 +175,16 @@ function exportConfig() {
     },
   });
 
-  var json = JSON.stringify(data, null, 2);
-  var blob = new Blob([json], { type: "application/json" });
-  var url = URL.createObjectURL(blob);
-  var name = backupExportFileName();
-  var a = document.createElement("a");
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  backupImageArchiveEntries()
+    .then(function (imageEntries) {
+      imageEntries.unshift({ name: "backup.json", bytes: new TextEncoder().encode(JSON.stringify(data, null, 2)) });
+      backupDownload(backupCreateZip(imageEntries), backupExportFileName());
+      showBanner("Backup exported with " + Math.max(0, imageEntries.length - 2) + " image" +
+        (imageEntries.length === 3 ? "" : "s") + ".", "success");
+    })
+    .catch(function (err) {
+      showBanner(err && err.message || "Could not export backup images.", "error");
+    });
 }
 
 function importConfig() {
