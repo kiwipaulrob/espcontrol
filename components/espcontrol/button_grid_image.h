@@ -856,9 +856,8 @@ inline void card_background_apply_downloaded(CardBackgroundImageCtx *ctx) {
     lv_obj_move_background(binding.widget);
     if (binding.btn) lv_obj_invalidate(binding.btn);
   }
-  // A subpage is built while hidden. Invalidating only its card can leave the
-  // RGB display's retained frame stale after the image source changes.
-  if (lv_scr_act()) lv_obj_invalidate(lv_scr_act());
+  // Invalidating the changed card is sufficient. Repainting the whole active
+  // screen for every decoded image causes visible tearing on RGB displays.
   notify_dashboard_content_changed();
 }
 

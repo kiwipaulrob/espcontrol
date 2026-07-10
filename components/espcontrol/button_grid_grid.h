@@ -1873,6 +1873,11 @@ inline void grid_phase2(
       display_apply_main_width(sub_slot.icon_lbl, display);
       display_apply_slot_text_width(sub_slot, display);
       setup_card_visual(sub_slot, sb_cfg, cfg, palette, rs, cs);
+      // Dynamic subpage cards start with placeholder labels. Rebuild the
+      // background-image shadows after setup has applied the real content.
+      if (card_background_configured_for_card(sb_cfg)) {
+        card_background_move_content_foreground(sub_slot);
+      }
 
       if (sb_cfg.type == "screen_lock") {
         lv_obj_add_event_cb(sb_btn, [](lv_event_t *) {
