@@ -751,9 +751,14 @@ inline void card_background_request_download(CardBackgroundImageCtx *ctx) {
   if (!ctx || !ctx->active || !ctx->image || ctx->url.empty()) return;
   int width = ctx->image->get_fixed_width();
   int height = ctx->image->get_fixed_height();
+  if (width <= 0 || height <= 0) {
+    ESP_LOGD("card_background", "Waiting for card size before downloading background image: %s", ctx->id.c_str());
+    return;
+  }
   ctx->download_active = true;
   ctx->download_queued = false;
   card_background_active_download_context() = ctx;
+  ESP_LOGI("card_background", "Downloading card background image: %s (%dx%d)", ctx->id.c_str(), width, height);
   std::string effective_url = ctx->image->request_update_url(
     ctx->url, std::max(width, height));
   if (!effective_url.empty()) ctx->url = effective_url;
@@ -785,6 +790,7 @@ inline void card_background_apply_downloaded(CardBackgroundImageCtx *ctx) {
   if (ctx->image->get_url() != ctx->url) return;
   card_background_release_download_slot(ctx);
   ctx->requested_once = true;
+  ESP_LOGI("card_background", "Applied card background image: %s", ctx->id.c_str());
   for (auto &binding : ctx->bindings) {
     if (!binding.active || !binding.widget) continue;
     card_background_position_widget(binding.btn, binding.widget);
@@ -881,6 +887,7 @@ inline CardBackgroundImageCtx::Binding *card_background_add_binding(CardBackgrou
 inline void card_background_sync_binding_image(CardBackgroundImageCtx *ctx,
                                                CardBackgroundImageCtx::Binding *binding) {
   if (!ctx || !ctx->image || !binding || !binding->widget) return;
+  if (ctx->target_width <= 0 || ctx->target_height <= 0) return;
   CardBackgroundImageCtx *active_download = card_background_active_download_context();
   if (ctx->requested_once && ctx->image->get_url() == ctx->url) {
     image_card_set_widget_source(binding->widget, ctx->image);

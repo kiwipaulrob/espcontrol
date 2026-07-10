@@ -515,6 +515,13 @@ function renderCardBackgroundControl(panel, b, helpers) {
     var id = selectedImage();
     preview.style.backgroundImage = id ? "url('" + cardImageUrl(id) + "')" : "";
     preview.classList.toggle("sp-card-bg-preview-empty", !id);
+    var iconName = iconSlug(resolveIcon(b));
+    var title = b.label || b.entity || "Configure";
+    var opacity = id ? (parseInt(cardBackgroundDim(b.options), 10) / 100).toFixed(2) : "0";
+    preview.innerHTML =
+      '<span class="sp-card-bg-preview-dim" style="background:rgba(0,0,0,' + opacity + ')"></span>' +
+      '<span class="sp-card-bg-preview-icon mdi mdi-' + iconName + '"></span>' +
+      '<span class="sp-card-bg-preview-title">' + escHtml(title) + '</span>';
     clearBtn.disabled = !id;
     deleteBtn.disabled = !id;
   }
@@ -574,6 +581,7 @@ function renderCardBackgroundControl(panel, b, helpers) {
     if (!selectedImage()) return;
     b.options = setConfigOptionValue(b.options, CARD_BACKGROUND_DIM_OPTION, normalizeCardBackgroundDim(this.value));
     helpers.saveField("options", b.options);
+    refreshPreview();
     renderPreview();
   });
 

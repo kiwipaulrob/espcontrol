@@ -328,9 +328,15 @@ var CSS =
   ".sp-entity-option:hover,.sp-entity-option:focus{background:var(--accent-soft);outline:none}" +
   ".sp-field-error{font-size:.75rem;color:#f66f81;margin-top:6px;line-height:1.35}" +
   ".sp-card-bg-field{display:grid;gap:10px}" +
-  ".sp-card-bg-preview{height:96px;border:1px solid var(--border);border-radius:8px;" +
-  "background:#111 center/cover no-repeat;box-sizing:border-box}" +
+  ".sp-card-bg-preview{height:128px;border:1px solid var(--border);border-radius:8px;" +
+  "background:#111 center/cover no-repeat;box-sizing:border-box;position:relative;overflow:hidden;" +
+  "display:flex;flex-direction:column;justify-content:space-between;padding:14px}" +
   ".sp-card-bg-preview-empty{background:linear-gradient(135deg,var(--surface2),var(--surface));}" +
+  ".sp-card-bg-preview-dim{position:absolute;inset:0;pointer-events:none;background:rgba(0,0,0,.45)}" +
+  ".sp-card-bg-preview-icon,.sp-card-bg-preview-title{position:relative;z-index:1;color:#fff;text-shadow:0 1px 8px rgba(0,0,0,.45)}" +
+  ".sp-card-bg-preview-icon{font-size:34px;line-height:1}" +
+  ".sp-card-bg-preview-title{font-size:1rem;line-height:1.2;font-weight:500;display:-webkit-box;" +
+  "-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;word-break:break-word}" +
   ".sp-card-bg-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}" +
   ".sp-card-bg-file{display:none}" +
   ".sp-card-bg-actions .sp-action-btn{padding:8px 12px;display:inline-flex;align-items:center;gap:6px}" +
