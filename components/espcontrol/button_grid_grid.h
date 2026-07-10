@@ -796,7 +796,6 @@ inline void grid_phase1(
   };
   const DisplayProfile display = display_profile_from_grid_config(cfg);
   display_set_width_axis(display);
-  button_grid_register_screen_load_callback(main_page_obj);
   reset_card_background_image_pool(cfg);
   int NS = bounded_grid_slots(cfg.num_slots);
   int COLS = cfg.cols > 0 ? cfg.cols : 1;
@@ -1766,7 +1765,6 @@ inline void grid_phase2(
     parse_subpage_order(sp_order_str, NS, sp_btns.size(), sp_ord);
 
     lv_obj_t *sub_scr = lv_obj_create(NULL);
-    button_grid_register_screen_load_callback(sub_scr);
     int display_order = NS;
     for (int pos = 0; pos < NS; pos++) {
       if (parsed.positions[pos] == si + 1) {
