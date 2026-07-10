@@ -715,6 +715,9 @@ inline void refresh_card_layout(BtnSlot &s, const ParsedCfg &p,
               !cover_command_mode(p.sensor) && !cover_toggle_mode(p.sensor))) {
     refresh_slider_card_layout(s);
   }
+  if (card_background_configured_for_card(p)) {
+    card_background_move_content_foreground(s);
+  }
 }
 
 inline void grid_refresh_layout(
