@@ -733,6 +733,8 @@ inline void image_card_parent_offset_from_button(lv_obj_t *obj, lv_obj_t *btn,
 inline void card_background_move_content_foreground(const BtnSlot &s) {
   auto sync_shadow = [](lv_obj_t *target, lv_obj_t *btn, lv_coord_t x_offset, lv_coord_t y_offset) {
     if (!target || !btn || lv_obj_has_flag(target, LV_OBJ_FLAG_HIDDEN)) return;
+    lv_obj_update_layout(btn);
+    lv_obj_update_layout(target);
     lv_obj_t *shadow = image_card_label_shadow(target, btn);
     if (!shadow) {
       shadow = lv_label_create(btn);
@@ -748,11 +750,14 @@ inline void card_background_move_content_foreground(const BtnSlot &s) {
     lv_label_set_long_mode(shadow, lv_label_get_long_mode(target));
     const char *text = lv_label_get_text(target);
     lv_label_set_text(shadow, text ? text : "");
-    lv_coord_t parent_x = 0;
-    lv_coord_t parent_y = 0;
-    lv_coord_t parent_height = 0;
-    image_card_parent_offset_from_button(target, btn, parent_x, parent_y, parent_height);
-    lv_obj_set_pos(shadow, parent_x + lv_obj_get_x(target) + x_offset, parent_y + lv_obj_get_y(target) + y_offset);
+    lv_area_t target_area;
+    lv_area_t button_area;
+    lv_obj_get_coords(target, &target_area);
+    lv_obj_get_coords(btn, &button_area);
+    lv_obj_set_pos(
+      shadow,
+      target_area.x1 - button_area.x1 + x_offset,
+      target_area.y1 - button_area.y1 + y_offset);
     lv_obj_set_size(shadow, lv_obj_get_width(target), lv_obj_get_height(target));
     lv_obj_set_style_pad_left(shadow, lv_obj_get_style_pad_left(target, LV_PART_MAIN), LV_PART_MAIN);
     lv_obj_set_style_pad_right(shadow, lv_obj_get_style_pad_right(target, LV_PART_MAIN), LV_PART_MAIN);
