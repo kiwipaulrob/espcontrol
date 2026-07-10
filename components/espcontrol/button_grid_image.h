@@ -1087,6 +1087,18 @@ inline bool card_background_widget_on_page(lv_obj_t *btn, lv_obj_t *page) {
   return false;
 }
 
+inline void card_background_unregister_page(lv_obj_t *page) {
+  if (!page) return;
+  auto &refs = card_background_widget_refs();
+  refs.erase(
+    std::remove_if(
+      refs.begin(), refs.end(),
+      [page](const CardBackgroundWidgetRef &ref) {
+        return card_background_widget_on_page(ref.btn, page);
+      }),
+    refs.end());
+}
+
 inline void card_background_activate_page(const GridConfig &cfg, lv_obj_t *page) {
   if (!page) return;
   card_background_release_contexts(cfg);

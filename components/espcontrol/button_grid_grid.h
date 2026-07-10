@@ -1171,6 +1171,9 @@ inline void grid_phase2(
   navigation_clear_home_targets();
   // Image-card contexts may still point at widgets inside subpage screens.
   reset_image_card_pool(cfg);
+  for (auto &entry : navigation_subpages()) {
+    card_background_unregister_page(entry.screen);
+  }
   navigation_clear_subpages();
   clear_subpage_vacuum_card_text_refs();
 
