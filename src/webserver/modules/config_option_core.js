@@ -227,7 +227,11 @@ function uploadCardImage(file) {
     });
   })
     .then(function (response) {
-      if (!response.ok) throw new Error("Could not upload image.");
+      if (!response.ok) {
+        return response.text().then(function (message) {
+          throw new Error(message || "Could not upload image.");
+        });
+      }
       return response.json();
     })
     .then(function (item) {

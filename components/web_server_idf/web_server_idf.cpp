@@ -357,7 +357,8 @@ esp_err_t handle_card_image_upload(httpd_req_t *r) {
     return ESP_OK;
   }
   if (!ensure_card_image_dir()) {
-    httpd_resp_send_err(r, HTTPD_500_INTERNAL_SERVER_ERROR, "Storage unavailable");
+    httpd_resp_send_err(r, HTTPD_500_INTERNAL_SERVER_ERROR,
+                        "Card image storage is unavailable. Reflash this device over USB once to install the image storage partition.");
     return ESP_OK;
   }
   if (card_image_count() >= CARD_IMAGE_MAX_COUNT) {
