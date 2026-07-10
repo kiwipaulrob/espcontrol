@@ -227,6 +227,7 @@ class ArtworkImage : public PollingComponent,
   std::string url_{""};
   int last_http_status_{0};
   bool last_error_was_ha_media_proxy_{false};
+  bool update_start_pending_{false};
 
   std::vector<std::pair<std::string, TemplatableValue<std::string> > > request_headers_;
 

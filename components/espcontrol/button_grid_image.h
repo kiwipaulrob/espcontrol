@@ -121,6 +121,11 @@ inline std::vector<CardBackgroundWidgetRef> &card_background_widget_refs() {
   return refs;
 }
 
+inline lv_obj_t *&card_background_active_page() {
+  static lv_obj_t *page = nullptr;
+  return page;
+}
+
 inline void image_card_schedule_source_refresh(ImageCardCtx *ctx, uint32_t delay_ms,
                                                const char *reason);
 
@@ -840,7 +845,6 @@ inline void card_background_release_download_slot(CardBackgroundImageCtx *ctx) {
 inline void card_background_apply_downloaded(CardBackgroundImageCtx *ctx) {
   if (!ctx || !ctx->active || !ctx->image) return;
   if (ctx->image->get_url() != ctx->url) return;
-  card_background_release_download_slot(ctx);
   ctx->requested_once = true;
   ESP_LOGI("card_background", "Applied card background image: %s", ctx->id.c_str());
   for (auto &binding : ctx->bindings) {
@@ -851,6 +855,10 @@ inline void card_background_apply_downloaded(CardBackgroundImageCtx *ctx) {
     if (binding.btn) lv_obj_invalidate(binding.btn);
   }
   notify_dashboard_content_changed();
+  // Make the completed card visible before connection setup for the next
+  // queued image. Local HTTP setup can otherwise hold the callback long
+  // enough for this card to appear as though it never loaded.
+  card_background_release_download_slot(ctx);
 }
 
 inline void card_background_handle_download_error(CardBackgroundImageCtx *ctx) {
@@ -923,6 +931,7 @@ inline void card_background_release_contexts(const GridConfig &cfg) {
 inline void reset_card_background_image_pool(const GridConfig &cfg) {
   card_background_release_contexts(cfg);
   card_background_widget_refs().clear();
+  card_background_active_page() = nullptr;
 }
 
 inline CardBackgroundImageCtx *acquire_card_background_image_context(const GridConfig &cfg,
@@ -1089,6 +1098,7 @@ inline bool card_background_widget_on_page(lv_obj_t *btn, lv_obj_t *page) {
 
 inline void card_background_unregister_page(lv_obj_t *page) {
   if (!page) return;
+  if (card_background_active_page() == page) card_background_active_page() = nullptr;
   auto &refs = card_background_widget_refs();
   refs.erase(
     std::remove_if(
@@ -1101,10 +1111,17 @@ inline void card_background_unregister_page(lv_obj_t *page) {
 
 inline void card_background_activate_page(const GridConfig &cfg, lv_obj_t *page) {
   if (!page) return;
+  if (card_background_active_page() == page) {
+    ESP_LOGD("card_background", "Background images already active for page %p", page);
+    return;
+  }
   card_background_release_contexts(cfg);
+  card_background_active_page() = page;
+  int visible_count = 0;
   for (auto &ref : card_background_widget_refs()) {
     image_card_clear_widget_source(ref.widget);
     if (!card_background_widget_on_page(ref.btn, page)) continue;
+    visible_count++;
     lv_obj_update_layout(ref.btn);
     int target_width = lv_obj_get_width(ref.btn);
     int target_height = lv_obj_get_height(ref.btn);
@@ -1123,6 +1140,8 @@ inline void card_background_activate_page(const GridConfig &cfg, lv_obj_t *page)
     card_background_configure_target_size(ctx, target_width, target_height);
     card_background_sync_binding_image(ctx, binding);
   }
+  ESP_LOGI("card_background", "Activated page %p with %d background image card(s)",
+           page, visible_count);
 }
 
 inline void apply_card_background_image(BtnSlot &s, const ParsedCfg &p,
