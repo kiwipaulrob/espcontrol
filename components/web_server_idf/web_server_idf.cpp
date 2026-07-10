@@ -301,16 +301,27 @@ bool handle_card_image_get(AsyncWebServerRequest *request) {
     return true;
   }
   const esp_partition_t *partition = card_image_partition();
-  std::string body;
-  body.resize(header.size);
-  if (esp_partition_read(partition, static_cast<size_t>(slot) * CARD_IMAGE_SLOT_SIZE + sizeof(CardImageHeader),
-                         &body[0], header.size) != ESP_OK) {
-    request->send(404, "text/plain", "Not found");
-    return true;
+  httpd_req_t *req = *request;
+  httpd_resp_set_status(req, HTTPD_200);
+  httpd_resp_set_type(req, "image/jpeg");
+  httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=31536000");
+  std::unique_ptr<char[]> buffer(new char[1024]);
+  size_t remaining = header.size;
+  size_t offset = 0;
+  while (remaining > 0) {
+    size_t chunk = remaining > 1024 ? 1024 : remaining;
+    if (esp_partition_read(partition, static_cast<size_t>(slot) * CARD_IMAGE_SLOT_SIZE + sizeof(CardImageHeader) + offset,
+                           buffer.get(), chunk) != ESP_OK) {
+      httpd_resp_send_chunk(req, nullptr, 0);
+      return true;
+    }
+    if (httpd_resp_send_chunk(req, buffer.get(), chunk) != ESP_OK) {
+      return true;
+    }
+    offset += chunk;
+    remaining -= chunk;
   }
-  auto *response = request->beginResponse(200, "image/jpeg", body);
-  response->addHeader("Cache-Control", "public, max-age=31536000");
-  request->send(response);
+  httpd_resp_send_chunk(req, nullptr, 0);
   return true;
 }
 
