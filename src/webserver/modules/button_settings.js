@@ -103,7 +103,9 @@ function renderButtonSettings(forceOpen) {
     : (c.isSub ? "sub:" + state.editingSubpage : "main") + ":" + slot;
 
   function cloneButtonConfig(src) {
-    return EspControlModel.cloneCardConfig(src);
+    var cloned = EspControlModel.cloneCardConfig(src);
+    normalizeButtonConfig(cloned);
+    return cloned;
   }
 
   function copyButtonConfig(target, src) {

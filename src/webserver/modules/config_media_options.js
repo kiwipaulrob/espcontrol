@@ -15,6 +15,9 @@ function normalizeMediaVolumeMax(value) {
 
 function normalizeMediaOptions(options, mode) {
   mode = mediaEditorMode(mode);
+  function withBackground(out) {
+    return copyCardBackgroundOptions(out, options, { type: "media" });
+  }
   if (mode === "control_modal") {
     var controlOut = "";
     var labelMode = normalizeMediaLabelDisplayMode(
@@ -31,7 +34,7 @@ function normalizeMediaOptions(options, mode) {
     if (controlMaxVolume !== cardContractOptionDefaultValue("media", MEDIA_VOLUME_MAX_OPTION, "100")) {
       controlOut = setConfigOptionValue(controlOut, MEDIA_VOLUME_MAX_OPTION, controlMaxVolume);
     }
-    return controlOut;
+    return withBackground(controlOut);
   }
   if (mode === "playlist") {
     var playlistOut = "";
@@ -44,16 +47,16 @@ function normalizeMediaOptions(options, mode) {
     }
     var playerSource = configOptionValue(options, MEDIA_PLAYLIST_PLAYER_SOURCE_OPTION);
     if (playerSource) playlistOut = setConfigOptionValue(playlistOut, MEDIA_PLAYLIST_PLAYER_SOURCE_OPTION, playerSource);
-    return playlistOut;
+    return withBackground(playlistOut);
   }
-  if (mode !== "volume" && mode !== "position") return "";
+  if (mode !== "volume" && mode !== "position") return withBackground("");
   var out = "";
   var maxVolume = normalizeMediaVolumeMax(configOptionValue(options, MEDIA_VOLUME_MAX_OPTION));
   if (mode === "volume" && maxVolume !== cardContractOptionDefaultValue("media", MEDIA_VOLUME_MAX_OPTION, "100")) {
     out = setConfigOptionValue(out, MEDIA_VOLUME_MAX_OPTION, maxVolume);
   }
   out = copyLargeNumbersOption(out, options);
-  return out;
+  return withBackground(out);
 }
 
 function normalizeMediaLabelDisplayMode(value) {
