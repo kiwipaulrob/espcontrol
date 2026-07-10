@@ -883,7 +883,6 @@ inline void card_background_sync_binding_image(CardBackgroundImageCtx *ctx,
   CardBackgroundImageCtx *active_download = card_background_active_download_context();
   if (ctx->requested_once && ctx->image->get_url() == ctx->url) {
     image_card_set_widget_source(binding->widget, ctx->image);
-    if (binding->dim) lv_obj_clear_flag(binding->dim, LV_OBJ_FLAG_HIDDEN);
   } else if (active_download && active_download != ctx) {
     ctx->download_queued = true;
   } else if (!ctx->download_active) {
