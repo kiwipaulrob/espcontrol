@@ -871,7 +871,7 @@ inline void grid_phase1(
     setup_card_visual(s, p, cfg, palette, row_span, col_span);
     refresh_card_layout(s, p, cfg, row_span);
   }
-  if (main_page_obj && lv_scr_act() == main_page_obj) {
+  if (main_page_obj) {
     card_background_activate_page(cfg, main_page_obj);
   }
   screen_lock_apply();
@@ -2553,7 +2553,10 @@ inline void grid_phase2(
 
     lv_obj_set_user_data(slots[si].btn, (void *)sub_scr);
   }
-  card_background_activate_page(cfg, lv_scr_act());
+  // Startup may still have ESPHome's loading screen active. The dashboard
+  // page is the intended initial page, so activate its image bindings
+  // explicitly instead of using the temporary active screen.
+  card_background_activate_page(cfg, main_page_obj);
   screen_lock_apply();
   refresh_weather_forecast_cards();
   grid_log_memory("end");
