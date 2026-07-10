@@ -117,8 +117,10 @@ function copyLargeNumbersOption(out, options) {
 }
 
 var _cardImageLibrary = [];
-var CARD_IMAGE_TARGET_SIZE = 240;
-var CARD_IMAGE_UPLOAD_MAX_BYTES = 60 * 1024;
+var _cardImageLibraryInfo = { storageBytes: 0, usedBytes: 0, freeBytes: 0, maxBytes: 0 };
+var CARD_IMAGE_TARGET_SIZE = 200;
+var CARD_IMAGE_UPLOAD_MAX_BYTES = 45 * 1024;
+var CARD_IMAGE_MIN_QUALITY = 0.42;
 
 function cardBackgroundSupported(b) {
   if (!b) return false;
@@ -158,8 +160,18 @@ function listCardImages(force) {
     })
     .then(function (data) {
       _cardImageLibrary = data && data.images ? data.images : [];
+      _cardImageLibraryInfo = {
+        storageBytes: parseInt(data && data.storage_bytes, 10) || 0,
+        usedBytes: parseInt(data && data.used_bytes, 10) || 0,
+        freeBytes: parseInt(data && data.free_bytes, 10) || 0,
+        maxBytes: parseInt(data && data.max_bytes, 10) || 0
+      };
       return _cardImageLibrary.slice();
     });
+}
+
+function cardImageLibraryInfo() {
+  return Object.assign({}, _cardImageLibraryInfo);
 }
 
 function resizeCardImageFile(file) {
@@ -195,8 +207,8 @@ function resizeCardImageFile(file) {
       function encode(quality) {
         if (canvas.toBlob) {
           canvas.toBlob(function (blob) {
-            if (blob && blob.size > CARD_IMAGE_UPLOAD_MAX_BYTES && quality > 0.48) {
-              encode(Math.max(0.48, quality - 0.08));
+            if (blob && blob.size > CARD_IMAGE_UPLOAD_MAX_BYTES && quality > CARD_IMAGE_MIN_QUALITY) {
+              encode(Math.max(CARD_IMAGE_MIN_QUALITY, quality - 0.08));
             } else {
               finish(blob, quality);
             }
@@ -208,8 +220,8 @@ function resizeCardImageFile(file) {
         var bytes = new Uint8Array(raw.length);
         for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
         var blob = new Blob([bytes], { type: "image/jpeg" });
-        if (blob.size > CARD_IMAGE_UPLOAD_MAX_BYTES && quality > 0.48) {
-          encode(Math.max(0.48, quality - 0.08));
+        if (blob.size > CARD_IMAGE_UPLOAD_MAX_BYTES && quality > CARD_IMAGE_MIN_QUALITY) {
+          encode(Math.max(CARD_IMAGE_MIN_QUALITY, quality - 0.08));
         } else {
           finish(blob, quality);
         }

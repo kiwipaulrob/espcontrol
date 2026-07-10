@@ -346,6 +346,7 @@ var CSS =
   ".sp-card-image-manager{display:grid;gap:14px}" +
   ".sp-card-image-manager-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}" +
   ".sp-card-image-manager-file{display:none}" +
+  ".sp-card-image-storage{color:var(--text2);font-size:.8rem;line-height:1.35}" +
   ".sp-card-image-manager-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}" +
   ".sp-card-image-manager-empty{border:1px dashed var(--border);border-radius:8px;padding:18px;" +
   "color:var(--text2);font-size:.875rem;text-align:center}" +

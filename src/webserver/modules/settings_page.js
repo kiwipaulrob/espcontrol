@@ -21,6 +21,7 @@ function countCardImageUsage(id) {
 function formatCardImageSize(size) {
   size = parseInt(size, 10);
   if (!isFinite(size) || size <= 0) return "";
+  if (size >= 1024 * 1024) return (size / (1024 * 1024)).toFixed(1) + " MB";
   return size >= 1024 ? Math.round(size / 1024) + " KB" : size + " B";
 }
 
@@ -43,9 +44,13 @@ function buildCardImageManagerCard() {
 
   var note = infoPanel(
     "sp-card-image-optimization-note",
-    "Images are resized and compressed in your browser to 240\u00d7240 JPEGs before upload, keeping the device fast."
+    "Images are resized and compressed in your browser to 200\u00d7200 JPEGs before upload, keeping the device fast."
   );
   body.appendChild(note);
+
+  var storage = document.createElement("div");
+  storage.className = "sp-card-image-storage";
+  body.appendChild(storage);
 
   var list = document.createElement("div");
   list.className = "sp-card-image-manager-list";
@@ -58,6 +63,17 @@ function buildCardImageManagerCard() {
 
   function renderItems(items) {
     list.innerHTML = "";
+    var info = cardImageLibraryInfo();
+    var used = formatCardImageSize(info.usedBytes);
+    var total = formatCardImageSize(info.storageBytes);
+    var free = formatCardImageSize(info.freeBytes);
+    var max = formatCardImageSize(info.maxBytes);
+    storage.textContent = total
+      ? (items || []).length + " image" + ((items || []).length === 1 ? "" : "s") +
+        " \u2022 " + (used || "0 B") + " used of " + total +
+        (free ? " \u2022 " + free + " free" : "") +
+        (max ? " \u2022 " + max + " max per image" : "")
+      : "";
     if (!items || !items.length) {
       var empty = document.createElement("div");
       empty.className = "sp-card-image-manager-empty";

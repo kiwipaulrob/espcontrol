@@ -6,6 +6,8 @@
 #include <cctype>
 #include <cinttypes>
 #include <cstdio>
+#include <algorithm>
+#include <vector>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <unistd.h>
@@ -46,13 +48,9 @@ namespace esphome::web_server_idf {
 #define CRLF_LEN (sizeof(CRLF_STR) - 1)
 
 static const char *const TAG = "web_server_idf";
-static constexpr size_t CARD_IMAGE_MAX_BYTES = 80 * 1024;
-static constexpr size_t CARD_IMAGE_MAX_COUNT = 8;
+static constexpr size_t CARD_IMAGE_MAX_BYTES = 64 * 1024;
 static constexpr size_t CARD_IMAGE_NAME_MAX_LENGTH = 40;
 static constexpr size_t CARD_IMAGE_FLASH_SECTOR_SIZE = 4096;
-static constexpr size_t CARD_IMAGE_SLOT_SIZE =
-    ((CARD_IMAGE_MAX_BYTES + 128 + CARD_IMAGE_FLASH_SECTOR_SIZE - 1) / CARD_IMAGE_FLASH_SECTOR_SIZE) *
-    CARD_IMAGE_FLASH_SECTOR_SIZE;
 static constexpr uint32_t CARD_IMAGE_MAGIC = 0x43494D47;  // "CIMG"
 static constexpr uint32_t CARD_IMAGE_VERSION = 1;
 
@@ -191,7 +189,7 @@ const esp_partition_t *card_image_partition() {
   }
   if (partition == nullptr) {
     ESP_LOGW(TAG, "Card image storage partition not found");
-  } else if (partition->size < CARD_IMAGE_SLOT_SIZE * CARD_IMAGE_MAX_COUNT) {
+  } else if (partition->size < CARD_IMAGE_FLASH_SECTOR_SIZE) {
     ESP_LOGW(TAG, "Card image storage partition is too small: %u bytes", static_cast<unsigned>(partition->size));
     partition = nullptr;
   } else {
@@ -201,16 +199,25 @@ const esp_partition_t *card_image_partition() {
   return partition;
 }
 
-bool read_card_image_header(size_t slot, CardImageHeader &header) {
-  const esp_partition_t *partition = card_image_partition();
-  if (partition == nullptr || slot >= CARD_IMAGE_MAX_COUNT) return false;
-  if (esp_partition_read(partition, slot * CARD_IMAGE_SLOT_SIZE, &header, sizeof(header)) != ESP_OK) return false;
+size_t card_image_record_size(size_t image_size) {
+  size_t bytes = sizeof(CardImageHeader) + image_size;
+  return ((bytes + CARD_IMAGE_FLASH_SECTOR_SIZE - 1) / CARD_IMAGE_FLASH_SECTOR_SIZE) * CARD_IMAGE_FLASH_SECTOR_SIZE;
+}
+
+bool card_image_header_valid(CardImageHeader &header) {
   if (header.magic != CARD_IMAGE_MAGIC || header.version != CARD_IMAGE_VERSION) return false;
   if (header.size == 0 || header.size > CARD_IMAGE_MAX_BYTES) return false;
   header.id[sizeof(header.id) - 1] = '\0';
   header.name[sizeof(header.name) - 1] = '\0';
   if (!card_image_id_valid(header.id)) return false;
   return true;
+}
+
+bool read_card_image_header_at(size_t offset, CardImageHeader &header) {
+  const esp_partition_t *partition = card_image_partition();
+  if (partition == nullptr || offset + sizeof(header) > partition->size) return false;
+  if (esp_partition_read(partition, offset, &header, sizeof(header)) != ESP_OK) return false;
+  return card_image_header_valid(header);
 }
 
 std::string normalize_card_image_name(const std::string &value) {
@@ -254,57 +261,99 @@ std::string card_image_item_json(const CardImageHeader &header) {
   return body;
 }
 
-int find_card_image_slot(const std::string &id) {
+int find_card_image_offset(const std::string &id) {
+  const esp_partition_t *partition = card_image_partition();
+  if (partition == nullptr) return -1;
   CardImageHeader header {};
-  for (size_t slot = 0; slot < CARD_IMAGE_MAX_COUNT; slot++) {
-    if (read_card_image_header(slot, header) && id == header.id) return static_cast<int>(slot);
+  for (size_t offset = 0; offset + sizeof(header) <= partition->size; offset += CARD_IMAGE_FLASH_SECTOR_SIZE) {
+    if (read_card_image_header_at(offset, header) && id == header.id) return static_cast<int>(offset);
   }
   return -1;
 }
 
 esp_err_t update_card_image_name(const std::string &id, const std::string &name, CardImageHeader &header) {
-  int slot = find_card_image_slot(id);
+  int offset = find_card_image_offset(id);
   const esp_partition_t *partition = card_image_partition();
-  if (slot < 0 || partition == nullptr || !read_card_image_header(static_cast<size_t>(slot), header)) {
+  if (offset < 0 || partition == nullptr || !read_card_image_header_at(static_cast<size_t>(offset), header)) {
     return ESP_ERR_NOT_FOUND;
   }
   strlcpy(header.name, name.c_str(), sizeof(header.name));
-  size_t slot_offset = static_cast<size_t>(slot) * CARD_IMAGE_SLOT_SIZE;
+  size_t record_offset = static_cast<size_t>(offset);
   std::unique_ptr<uint8_t[]> sector(new uint8_t[CARD_IMAGE_FLASH_SECTOR_SIZE]);
-  esp_err_t err = esp_partition_read(partition, slot_offset, sector.get(), CARD_IMAGE_FLASH_SECTOR_SIZE);
+  esp_err_t err = esp_partition_read(partition, record_offset, sector.get(), CARD_IMAGE_FLASH_SECTOR_SIZE);
   if (err == ESP_OK) {
     memcpy(sector.get(), &header, sizeof(header));
-    err = esp_partition_erase_range(partition, slot_offset, CARD_IMAGE_FLASH_SECTOR_SIZE);
+    err = esp_partition_erase_range(partition, record_offset, CARD_IMAGE_FLASH_SECTOR_SIZE);
   }
   if (err == ESP_OK) {
-    err = esp_partition_write(partition, slot_offset, sector.get(), CARD_IMAGE_FLASH_SECTOR_SIZE);
+    err = esp_partition_write(partition, record_offset, sector.get(), CARD_IMAGE_FLASH_SECTOR_SIZE);
   }
   return err;
 }
 
-int find_empty_card_image_slot() {
+size_t card_image_used_bytes() {
+  const esp_partition_t *partition = card_image_partition();
+  if (partition == nullptr) return 0;
+  size_t used = 0;
+  CardImageHeader header {};
+  for (size_t offset = 0; offset + sizeof(header) <= partition->size; offset += CARD_IMAGE_FLASH_SECTOR_SIZE) {
+    if (!read_card_image_header_at(offset, header)) continue;
+    size_t record_size = card_image_record_size(header.size);
+    if (offset + record_size <= partition->size) used += record_size;
+  }
+  return used;
+}
+
+int find_empty_card_image_offset(size_t image_size) {
   const esp_partition_t *partition = card_image_partition();
   if (partition == nullptr) return -1;
+  size_t required_sectors = card_image_record_size(image_size) / CARD_IMAGE_FLASH_SECTOR_SIZE;
+  size_t total_sectors = partition->size / CARD_IMAGE_FLASH_SECTOR_SIZE;
+  if (required_sectors == 0 || required_sectors > total_sectors) return -1;
+  std::vector<uint8_t> used(total_sectors, 0);
   CardImageHeader header {};
-  for (size_t slot = 0; slot < CARD_IMAGE_MAX_COUNT; slot++) {
-    if (esp_partition_read(partition, slot * CARD_IMAGE_SLOT_SIZE, &header, sizeof(header)) != ESP_OK) continue;
-    if (header.magic == 0xFFFFFFFF || header.magic == 0 || header.magic != CARD_IMAGE_MAGIC) {
-      return static_cast<int>(slot);
+  for (size_t sector = 0; sector < total_sectors; sector++) {
+    size_t offset = sector * CARD_IMAGE_FLASH_SECTOR_SIZE;
+    if (!read_card_image_header_at(offset, header)) continue;
+    size_t record_sectors = card_image_record_size(header.size) / CARD_IMAGE_FLASH_SECTOR_SIZE;
+    if (record_sectors == 0 || sector + record_sectors > total_sectors) continue;
+    for (size_t i = 0; i < record_sectors; i++) used[sector + i] = 1;
+  }
+  size_t run = 0;
+  size_t start = 0;
+  for (size_t sector = 0; sector < total_sectors; sector++) {
+    if (used[sector]) {
+      run = 0;
+      start = sector + 1;
+      continue;
+    }
+    if (run == 0) start = sector;
+    run++;
+    if (run >= required_sectors) {
+      return static_cast<int>(start * CARD_IMAGE_FLASH_SECTOR_SIZE);
     }
   }
   return -1;
 }
 
 std::string card_image_list_json() {
-  std::string out = "{\"max_count\":";
-  out += std::to_string(CARD_IMAGE_MAX_COUNT);
+  const esp_partition_t *partition = card_image_partition();
+  size_t storage_bytes = partition ? partition->size : 0;
+  size_t used_bytes = card_image_used_bytes();
+  size_t free_bytes = storage_bytes > used_bytes ? storage_bytes - used_bytes : 0;
+  std::string out = "{\"storage_bytes\":";
+  out += std::to_string(storage_bytes);
+  out += ",\"used_bytes\":";
+  out += std::to_string(used_bytes);
+  out += ",\"free_bytes\":";
+  out += std::to_string(free_bytes);
   out += ",\"max_bytes\":";
   out += std::to_string(CARD_IMAGE_MAX_BYTES);
   out += ",\"images\":[";
   bool first = true;
   CardImageHeader header {};
-  for (size_t slot = 0; slot < CARD_IMAGE_MAX_COUNT; slot++) {
-    if (!read_card_image_header(slot, header)) continue;
+  if (partition != nullptr) for (size_t offset = 0; offset + sizeof(header) <= partition->size; offset += CARD_IMAGE_FLASH_SECTOR_SIZE) {
+    if (!read_card_image_header_at(offset, header)) continue;
     if (!first) out += ",";
     first = false;
     out += "{\"id\":";
@@ -322,10 +371,12 @@ std::string card_image_list_json() {
 }
 
 size_t card_image_count() {
+  const esp_partition_t *partition = card_image_partition();
+  if (partition == nullptr) return 0;
   size_t count = 0;
   CardImageHeader header {};
-  for (size_t slot = 0; slot < CARD_IMAGE_MAX_COUNT; slot++) {
-    if (read_card_image_header(slot, header)) count++;
+  for (size_t offset = 0; offset + sizeof(header) <= partition->size; offset += CARD_IMAGE_FLASH_SECTOR_SIZE) {
+    if (read_card_image_header_at(offset, header)) count++;
   }
   return count;
 }
@@ -334,7 +385,7 @@ std::string next_card_image_id() {
   uint32_t now = esphome::millis();
   for (int i = 0; i < 100; i++) {
     std::string id = "img-" + std::to_string(now) + "-" + std::to_string(i);
-    if (find_card_image_slot(id) < 0) return id;
+    if (find_card_image_offset(id) < 0) return id;
   }
   return "";
 }
@@ -379,13 +430,13 @@ bool handle_card_image_get(AsyncWebServerRequest *request) {
     request->send(404, "text/plain", "Not found");
     return true;
   }
-  int slot = find_card_image_slot(id);
-  if (slot < 0) {
+  int image_offset = find_card_image_offset(id);
+  if (image_offset < 0) {
     request->send(404, "text/plain", "Not found");
     return true;
   }
   CardImageHeader header {};
-  if (!read_card_image_header(static_cast<size_t>(slot), header)) {
+  if (!read_card_image_header_at(static_cast<size_t>(image_offset), header)) {
     request->send(404, "text/plain", "Not found");
     return true;
   }
@@ -399,7 +450,7 @@ bool handle_card_image_get(AsyncWebServerRequest *request) {
   size_t offset = 0;
   while (remaining > 0) {
     size_t chunk = remaining > 1024 ? 1024 : remaining;
-    if (esp_partition_read(partition, static_cast<size_t>(slot) * CARD_IMAGE_SLOT_SIZE + sizeof(CardImageHeader) + offset,
+    if (esp_partition_read(partition, static_cast<size_t>(image_offset) + sizeof(CardImageHeader) + offset,
                            buffer.get(), chunk) != ESP_OK) {
       httpd_resp_send_chunk(req, nullptr, 0);
       return true;
@@ -424,10 +475,13 @@ bool handle_card_image_delete(AsyncWebServerRequest *request) {
     request->send(404, "text/plain", "Not found");
     return true;
   }
-  int slot = find_card_image_slot(id);
+  int image_offset = find_card_image_offset(id);
   const esp_partition_t *partition = card_image_partition();
-  if (slot >= 0 && partition != nullptr) {
-    esp_partition_erase_range(partition, static_cast<size_t>(slot) * CARD_IMAGE_SLOT_SIZE, CARD_IMAGE_SLOT_SIZE);
+  CardImageHeader header {};
+  if (image_offset >= 0 && partition != nullptr &&
+      read_card_image_header_at(static_cast<size_t>(image_offset), header)) {
+    esp_partition_erase_range(
+      partition, static_cast<size_t>(image_offset), card_image_record_size(header.size));
   }
   request->send(200, "application/json", "{\"ok\":true}");
   return true;
@@ -495,25 +549,22 @@ esp_err_t handle_card_image_upload(httpd_req_t *r) {
                         "Card image storage is unavailable. Reflash this device over USB once to install the image storage partition.");
     return ESP_OK;
   }
-  if (card_image_count() >= CARD_IMAGE_MAX_COUNT) {
-    httpd_resp_send_err(r, HTTPD_400_BAD_REQUEST, "Image library full");
-    return ESP_OK;
-  }
   std::string id = next_card_image_id();
   if (id.empty()) {
     httpd_resp_send_err(r, HTTPD_500_INTERNAL_SERVER_ERROR, "Could not allocate image id");
     return ESP_OK;
   }
-  int slot = find_empty_card_image_slot();
-  if (slot < 0) {
-    httpd_resp_send_err(r, HTTPD_400_BAD_REQUEST, "Image library full");
+  int image_offset = find_empty_card_image_offset(r->content_len);
+  size_t record_size = card_image_record_size(r->content_len);
+  if (image_offset < 0) {
+    httpd_resp_send_err(r, HTTPD_400_BAD_REQUEST, "Not enough image storage space");
     return ESP_OK;
   }
   std::unique_ptr<char[]> buffer(new char[1024]);
-  size_t slot_offset = static_cast<size_t>(slot) * CARD_IMAGE_SLOT_SIZE;
-  esp_err_t err = esp_partition_erase_range(partition, slot_offset, CARD_IMAGE_SLOT_SIZE);
+  size_t record_offset = static_cast<size_t>(image_offset);
+  esp_err_t err = esp_partition_erase_range(partition, record_offset, record_size);
   if (err != ESP_OK) {
-    ESP_LOGE(TAG, "Failed to erase card image slot: %s", esp_err_to_name(err));
+    ESP_LOGE(TAG, "Failed to erase card image space: %s", esp_err_to_name(err));
     httpd_resp_send_err(r, HTTPD_500_INTERNAL_SERVER_ERROR, "Upload failed");
     return ESP_OK;
   }
@@ -523,14 +574,14 @@ esp_err_t handle_card_image_upload(httpd_req_t *r) {
     size_t want = remaining > 1024 ? 1024 : remaining;
     int ret = httpd_req_recv(r, buffer.get(), want);
     if (ret <= 0) {
-      esp_partition_erase_range(partition, slot_offset, CARD_IMAGE_SLOT_SIZE);
+      esp_partition_erase_range(partition, record_offset, record_size);
       httpd_resp_send_err(r, HTTPD_400_BAD_REQUEST, "Upload failed");
       return ESP_OK;
     }
-    err = esp_partition_write(partition, slot_offset + sizeof(CardImageHeader) + offset,
+    err = esp_partition_write(partition, record_offset + sizeof(CardImageHeader) + offset,
                               buffer.get(), static_cast<size_t>(ret));
     if (err != ESP_OK) {
-      esp_partition_erase_range(partition, slot_offset, CARD_IMAGE_SLOT_SIZE);
+      esp_partition_erase_range(partition, record_offset, record_size);
       ESP_LOGE(TAG, "Failed to write card image chunk: %s", esp_err_to_name(err));
       httpd_resp_send_err(r, HTTPD_500_INTERNAL_SERVER_ERROR, "Upload failed");
       return ESP_OK;
@@ -544,9 +595,9 @@ esp_err_t handle_card_image_upload(httpd_req_t *r) {
   header.size = r->content_len;
   strlcpy(header.id, id.c_str(), sizeof(header.id));
   strlcpy(header.name, id.c_str(), sizeof(header.name));
-  err = esp_partition_write(partition, slot_offset, &header, sizeof(header));
+  err = esp_partition_write(partition, record_offset, &header, sizeof(header));
   if (err != ESP_OK) {
-    esp_partition_erase_range(partition, slot_offset, CARD_IMAGE_SLOT_SIZE);
+    esp_partition_erase_range(partition, record_offset, record_size);
     ESP_LOGE(TAG, "Failed to write card image header: %s", esp_err_to_name(err));
     httpd_resp_send_err(r, HTTPD_500_INTERNAL_SERVER_ERROR, "Upload failed");
     return ESP_OK;
