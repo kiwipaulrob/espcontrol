@@ -1,5 +1,153 @@
 // ── Settings Page ──────────────────────────────────────────────────────
-// @web-module-requires: state, language_state, environment_state, screen_rotation_state, screen_schedule_state, screen_schedule_post_api, ntp_state, appearance_state, idle_state, artwork_state, artwork_post_api, screensaver_state, firmware_version_state, clock_bar_state, clock_bar_post_api, entity_state, firmware_update_state, screensaver_timeout, c6_firmware_ui, api, public_firmware_install, state_loader_api, controls, controls_shell
+// @web-module-requires: state, language_state, environment_state, screen_rotation_state, screen_schedule_state, screen_schedule_post_api, ntp_state, appearance_state, idle_state, artwork_state, artwork_post_api, screensaver_state, firmware_version_state, clock_bar_state, clock_bar_post_api, entity_state, firmware_update_state, screensaver_timeout, c6_firmware_ui, api, public_firmware_install, state_loader_api, config_option_core, controls, controls_shell
+
+function countCardImageUsage(id) {
+  id = normalizeCardBackgroundImageId(id);
+  if (!id) return 0;
+  var count = 0;
+  function countButtons(buttons) {
+    (buttons || []).forEach(function (button) {
+      if (cardBackgroundImage(button && button.options) === id) count++;
+    });
+  }
+  countButtons(state.buttons);
+  Object.keys(state.subpages || {}).forEach(function (key) {
+    var subpage = state.subpages[key];
+    countButtons(subpage && subpage.buttons);
+  });
+  return count;
+}
+
+function formatCardImageSize(size) {
+  size = parseInt(size, 10);
+  if (!isFinite(size) || size <= 0) return "";
+  return size >= 1024 ? Math.round(size / 1024) + " KB" : size + " B";
+}
+
+function buildCardImageManagerCard() {
+  var body = document.createElement("div");
+  body.className = "sp-card-image-manager";
+
+  var actions = document.createElement("div");
+  actions.className = "sp-card-image-manager-actions";
+  var file = document.createElement("input");
+  file.type = "file";
+  file.accept = "image/*";
+  file.className = "sp-card-image-manager-file";
+  var upload = createActionButton("sp-action-btn", "Upload Image", "upload");
+  var refresh = createActionButton("sp-action-btn", "Refresh", "refresh");
+  actions.appendChild(file);
+  actions.appendChild(upload);
+  actions.appendChild(refresh);
+  body.appendChild(actions);
+
+  var list = document.createElement("div");
+  list.className = "sp-card-image-manager-list";
+  body.appendChild(list);
+
+  function setBusy(busy) {
+    upload.disabled = !!busy;
+    refresh.disabled = !!busy;
+  }
+
+  function renderItems(items) {
+    list.innerHTML = "";
+    if (!items || !items.length) {
+      var empty = document.createElement("div");
+      empty.className = "sp-card-image-manager-empty";
+      empty.textContent = "No uploaded images yet.";
+      list.appendChild(empty);
+      return;
+    }
+    items.forEach(function (item) {
+      var id = normalizeCardBackgroundImageId(item && item.id);
+      if (!id) return;
+      var card = document.createElement("div");
+      card.className = "sp-card-image-item";
+
+      var thumb = document.createElement("div");
+      thumb.className = "sp-card-image-thumb";
+      thumb.style.backgroundImage = "url('" + cardImageUrl(id) + "')";
+      card.appendChild(thumb);
+
+      var meta = document.createElement("div");
+      meta.className = "sp-card-image-meta";
+      var name = document.createElement("div");
+      name.className = "sp-card-image-name";
+      name.title = item.name || id;
+      name.textContent = item.name || id;
+      meta.appendChild(name);
+
+      var usage = countCardImageUsage(id);
+      var detail = document.createElement("div");
+      detail.className = "sp-card-image-detail";
+      var size = formatCardImageSize(item.size);
+      detail.textContent = (size ? size + " \u2022 " : "") +
+        (usage ? "Used by " + usage + " card" + (usage === 1 ? "" : "s") : "Not used");
+      meta.appendChild(detail);
+      card.appendChild(meta);
+
+      var del = createActionButton("sp-action-btn sp-card-image-delete", "Delete", "trash-can-outline");
+      del.addEventListener("click", function () {
+        var used = countCardImageUsage(id);
+        if (used && !window.confirm("This image is used by " + used + " card" +
+            (used === 1 ? "" : "s") + ". Delete it anyway?")) {
+          return;
+        }
+        setBusy(true);
+        deleteCardImage(id)
+          .then(function () { return listCardImages(true); })
+          .then(function (fresh) {
+            showBanner("Image deleted.", "success");
+            renderItems(fresh);
+            renderPreview();
+            renderButtonSettings();
+          })
+          .catch(function (err) {
+            showBanner(err && err.message || "Could not delete image.", "error");
+          })
+          .then(function () { setBusy(false); });
+      });
+      card.appendChild(del);
+      list.appendChild(card);
+    });
+  }
+
+  function refreshList(force) {
+    setBusy(true);
+    return listCardImages(force)
+      .then(renderItems)
+      .catch(function (err) {
+        showBanner(err && err.message || "Could not load images.", "error");
+      })
+      .then(function () { setBusy(false); });
+  }
+
+  upload.addEventListener("click", function () { file.click(); });
+  file.addEventListener("change", function () {
+    var selected = file.files && file.files[0];
+    if (!selected) return;
+    setBusy(true);
+    uploadCardImage(selected)
+      .then(function () { return listCardImages(true); })
+      .then(function (fresh) {
+        showBanner("Image uploaded.", "success");
+        renderItems(fresh);
+        renderButtonSettings();
+      })
+      .catch(function (err) {
+        showBanner(err && err.message || "Could not upload image.", "error");
+      })
+      .then(function () {
+        file.value = "";
+        setBusy(false);
+      });
+  });
+  refresh.addEventListener("click", function () { refreshList(true); });
+
+  refreshList(false);
+  return makeCollapsibleCard("Card Images", body, true);
+}
 
 function buildSettingsPage(parent) {
   var page = document.createElement("div");
@@ -424,6 +572,7 @@ function buildSettingsPage(parent) {
   els.setIdleBadge = idleBadge;
   syncIdleUi();
   var idleCard = makeCollapsibleCard("Idle", idleBody, true, idleBadge);
+  var cardImagesCard = buildCardImageManagerCard();
 
   var systemSettingsCards = buildSystemSettingsCards();
 
@@ -444,6 +593,7 @@ function buildSettingsPage(parent) {
     languageCard,
     timeSettingsCard,
     temperatureCard,
+    cardImagesCard,
   ]);
   appendSettingsSection(config, "System", [
     systemSettingsCards.backupCard,
