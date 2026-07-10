@@ -96,7 +96,6 @@ struct CardBackgroundImageCtx {
   struct Binding {
     lv_obj_t *btn = nullptr;
     lv_obj_t *widget = nullptr;
-    lv_obj_t *dim = nullptr;
     bool active = false;
   } bindings[CARD_BACKGROUND_IMAGE_MAX_BINDINGS];
 };
@@ -795,10 +794,6 @@ inline void card_background_apply_downloaded(CardBackgroundImageCtx *ctx) {
     if (!binding.active || !binding.widget) continue;
     card_background_position_widget(binding.btn, binding.widget);
     image_card_set_widget_source(binding.widget, ctx->image);
-    if (binding.dim) {
-      lv_obj_clear_flag(binding.dim, LV_OBJ_FLAG_HIDDEN);
-      lv_obj_move_background(binding.dim);
-    }
     lv_obj_move_background(binding.widget);
     if (binding.btn) lv_obj_invalidate(binding.btn);
   }
@@ -812,7 +807,6 @@ inline void card_background_handle_download_error(CardBackgroundImageCtx *ctx) {
   for (auto &binding : ctx->bindings) {
     if (!binding.active) continue;
     if (binding.widget) lv_obj_add_flag(binding.widget, LV_OBJ_FLAG_HIDDEN);
-    if (binding.dim) lv_obj_add_flag(binding.dim, LV_OBJ_FLAG_HIDDEN);
   }
 }
 
@@ -856,7 +850,6 @@ inline void reset_card_background_image_pool(const GridConfig &cfg) {
       binding.active = false;
       binding.btn = nullptr;
       binding.widget = nullptr;
-      binding.dim = nullptr;
     }
     contexts[i].active = false;
     contexts[i].id.clear();
@@ -881,8 +874,7 @@ inline CardBackgroundImageCtx *acquire_card_background_image_context(const GridC
 
 inline CardBackgroundImageCtx::Binding *card_background_add_binding(CardBackgroundImageCtx *ctx,
                                                                     lv_obj_t *btn,
-                                                                    lv_obj_t *widget,
-                                                                    lv_obj_t *dim);
+                                                                    lv_obj_t *widget);
 
 inline void card_background_sync_binding_image(CardBackgroundImageCtx *ctx,
                                                CardBackgroundImageCtx::Binding *binding) {
@@ -921,13 +913,12 @@ inline bool card_background_move_binding_to_size(CardBackgroundImageCtx *ctx,
   if (!target || target == ctx) return false;
 
   CardBackgroundImageCtx::Binding *new_binding = card_background_add_binding(
-    target, binding.btn, binding.widget, binding.dim);
+    target, binding.btn, binding.widget);
   if (!new_binding) return false;
 
   binding.active = false;
   binding.btn = nullptr;
   binding.widget = nullptr;
-  binding.dim = nullptr;
   card_background_deactivate_if_unused(ctx);
   card_background_sync_binding_image(target, new_binding);
   return true;
@@ -944,7 +935,6 @@ inline void refresh_card_background_image(lv_obj_t *btn, const GridConfig &cfg) 
       int previous_width = ctx->image->get_fixed_width();
       int previous_height = ctx->image->get_fixed_height();
       card_background_position_widget(binding.btn, binding.widget);
-      image_card_position_widget(binding.btn, binding.dim);
       int width = lv_obj_get_width(btn);
       int height = lv_obj_get_height(btn);
       if (width <= 0 || height <= 0) return;
@@ -967,7 +957,6 @@ inline void refresh_card_background_image(lv_obj_t *btn, const GridConfig &cfg) 
           card_background_request_download(ctx);
         }
       }
-      if (binding.dim) lv_obj_move_background(binding.dim);
       lv_obj_move_background(binding.widget);
     }
   }
@@ -1001,15 +990,13 @@ inline CardBackgroundImageCtx *acquire_card_background_image_context(const GridC
 
 inline CardBackgroundImageCtx::Binding *card_background_add_binding(CardBackgroundImageCtx *ctx,
                                                                     lv_obj_t *btn,
-                                                                    lv_obj_t *widget,
-                                                                    lv_obj_t *dim) {
+                                                                    lv_obj_t *widget) {
   if (!ctx) return nullptr;
   for (auto &binding : ctx->bindings) {
     if (!binding.active) {
       binding.active = true;
       binding.btn = btn;
       binding.widget = widget;
-      binding.dim = dim;
       return &binding;
     }
   }
@@ -1046,21 +1033,9 @@ inline void apply_card_background_image(BtnSlot &s, const ParsedCfg &p,
   lv_obj_set_style_bg_opa(img, LV_OPA_TRANSP, LV_PART_MAIN);
   image_card_apply_tile_image_align(img);
 
-  lv_obj_t *dim = lv_obj_create(s.btn);
-  lv_obj_clear_flag(dim, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_clear_flag(dim, LV_OBJ_FLAG_SCROLLABLE);
-  lv_obj_set_style_border_width(dim, 0, LV_PART_MAIN);
-  lv_obj_set_style_shadow_width(dim, 0, LV_PART_MAIN);
-  lv_obj_set_style_pad_all(dim, 0, LV_PART_MAIN);
-  lv_obj_set_style_bg_color(dim, lv_color_hex(DARK_OVERLAY), LV_PART_MAIN);
-  lv_obj_set_style_bg_opa(
-    dim, static_cast<lv_opa_t>(card_background_dim_percent(p.options) * 255 / 100), LV_PART_MAIN);
-  image_card_position_widget(s.btn, dim);
-
-  CardBackgroundImageCtx::Binding *binding = card_background_add_binding(ctx, s.btn, img, dim);
+  CardBackgroundImageCtx::Binding *binding = card_background_add_binding(ctx, s.btn, img);
   if (!binding) {
     ESP_LOGW("card_background", "No card binding available for card background image %s", id.c_str());
-    lv_obj_del(dim);
     lv_obj_del(img);
     return;
   }
@@ -1068,7 +1043,6 @@ inline void apply_card_background_image(BtnSlot &s, const ParsedCfg &p,
   card_background_position_widget(binding->btn, binding->widget);
   card_background_configure_target_size(ctx, target_width, target_height);
   card_background_sync_binding_image(ctx, binding);
-  lv_obj_move_background(dim);
   lv_obj_move_background(img);
   card_background_move_content_foreground(s);
 }

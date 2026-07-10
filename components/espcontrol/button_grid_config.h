@@ -59,7 +59,6 @@ constexpr const char *IMAGE_MODAL_MODE_OPTION = card_runtime_option_name_image_m
 constexpr const char *IMAGE_REFRESH_OPTION = card_runtime_option_name_image_refresh();
 constexpr const char *IMAGE_REFRESH_MODE_OPTION = card_runtime_option_name_image_refresh_mode();
 constexpr const char *CARD_BACKGROUND_IMAGE_OPTION = "bg_image";
-constexpr const char *CARD_BACKGROUND_DIM_OPTION = "bg_dim";
 constexpr const char *LIGHT_CONTROL_TABS_OPTION = card_runtime_option_name_light_tabs();
 constexpr const char *LIGHT_CONTROL_DEFAULT_TABS_VALUE = "power|brightness|temperature|color";
 constexpr const char *COVER_CONTROL_TABS_OPTION = card_runtime_option_name_cover_tabs();
@@ -252,24 +251,10 @@ inline bool card_background_image_id_valid(const std::string &value) {
   return true;
 }
 
-inline int card_background_dim_percent(const std::string &options) {
-  std::string value = cfg_option_value(options, CARD_BACKGROUND_DIM_OPTION);
-  if (value.empty()) return 45;
-  char *end = nullptr;
-  long parsed = std::strtol(value.c_str(), &end, 10);
-  if (end == value.c_str()) return 45;
-  if (parsed < 0) return 0;
-  if (parsed > 90) return 90;
-  return static_cast<int>(parsed);
-}
-
 inline std::string card_background_options_normalized(const std::string &options) {
   std::string image = cfg_option_value(options, CARD_BACKGROUND_IMAGE_OPTION);
   if (!card_background_image_id_valid(image)) return "";
-  std::string out = std::string(CARD_BACKGROUND_IMAGE_OPTION) + "=" + image;
-  int dim = card_background_dim_percent(options);
-  if (dim != 45) out += std::string(",") + CARD_BACKGROUND_DIM_OPTION + "=" + std::to_string(dim);
-  return out;
+  return std::string(CARD_BACKGROUND_IMAGE_OPTION) + "=" + image;
 }
 
 inline bool card_background_supported_type(const std::string &type) {

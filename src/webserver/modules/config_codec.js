@@ -2,7 +2,6 @@
 // @web-module-requires: model_generated, card_contract_generated, state, grid
 
 var CARD_BACKGROUND_IMAGE_OPTION = "bg_image";
-var CARD_BACKGROUND_DIM_OPTION = "bg_dim";
 
 function normalizeWithRegisteredCardType(b) {
   if (!b || typeof BUTTON_TYPES === "undefined") return false;

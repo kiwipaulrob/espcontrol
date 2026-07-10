@@ -215,10 +215,8 @@ function renderPreview() {
       var bgImage = cardBackgroundSupported(b) ? cardBackgroundImage(b.options) : "";
       var bgOverlay = "";
       if (bgImage) {
-        var bgDim = (parseInt(cardBackgroundDim(b.options), 10) / 100).toFixed(2);
         btn.className += " sp-btn-has-bg";
-        btn.style.backgroundImage = "linear-gradient(rgba(0,0,0," + bgDim + "),rgba(0,0,0," +
-          bgDim + ")),url('" + cardImageUrl(bgImage) + "')";
+        btn.style.backgroundImage = "url('" + cardImageUrl(bgImage) + "')";
         btn.style.backgroundSize = "cover";
         btn.style.backgroundPosition = "center";
       }

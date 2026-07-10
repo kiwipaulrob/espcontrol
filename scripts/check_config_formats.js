@@ -535,13 +535,13 @@ assert(
   "media card background image survives serialization"
 );
 assert(
-  parsedMediaBackgroundButton.options.includes("bg_dim=60"),
-  "media card background dim survives serialization"
+  !parsedMediaBackgroundButton.options.includes("bg_dim="),
+  "legacy media card background dim is dropped during serialization"
 );
 assert.strictEqual(
   hooks.normalizeMediaOptions(mediaBackgroundButton.options, "playlist"),
-  "playlist_content_id=spotify%3Aplaylist%3Aabc,bg_image=img-1121238-0,bg_dim=60",
-  "media card background image survives media option normalization"
+  "playlist_content_id=spotify%3Aplaylist%3Aabc,bg_image=img-1121238-0",
+  "media card background image survives media option normalization without legacy dim"
 );
 assert.strictEqual(
   hooks.normalizeMediaOptions("volume_max=40", "volume"),

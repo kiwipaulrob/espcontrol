@@ -47,7 +47,6 @@ var IMAGE_MODAL_MODE_OPTION = cardContractOptionName("image_modal_mode");
 var IMAGE_REFRESH_OPTION = cardContractOptionName("image_refresh");
 var IMAGE_REFRESH_MODE_OPTION = cardContractOptionName("image_refresh_mode");
 var CARD_BACKGROUND_IMAGE_OPTION = cardContractOptionName("bg_image");
-var CARD_BACKGROUND_DIM_OPTION = cardContractOptionName("bg_dim");
 var LIGHT_CONTROL_TABS_OPTION = cardContractOptionName("light_tabs");
 var COVER_CONTROL_TABS_OPTION = cardContractOptionName("cover_tabs");
 var CLIMATE_CONTROL_TABS_OPTION = cardContractOptionName("climate_tabs");
@@ -134,28 +133,15 @@ function normalizeCardBackgroundImageId(value) {
   return /^[a-z0-9-]{1,40}$/.test(value) ? value : "";
 }
 
-function normalizeCardBackgroundDim(value) {
-  var parsed = parseInt(value, 10);
-  if (!isFinite(parsed)) return "45";
-  if (parsed < 0) parsed = 0;
-  if (parsed > 90) parsed = 90;
-  return String(parsed);
-}
-
 function cardBackgroundImage(options) {
   return normalizeCardBackgroundImageId(configOptionValue(options, CARD_BACKGROUND_IMAGE_OPTION));
-}
-
-function cardBackgroundDim(options) {
-  return normalizeCardBackgroundDim(configOptionValue(options, CARD_BACKGROUND_DIM_OPTION) || "45");
 }
 
 function copyCardBackgroundOptions(out, sourceOptions, b) {
   if (!cardBackgroundSupported(b)) return out || "";
   var id = cardBackgroundImage(sourceOptions);
   if (!id) return out || "";
-  out = setConfigOptionValue(out || "", CARD_BACKGROUND_IMAGE_OPTION, id);
-  return setConfigOptionValue(out, CARD_BACKGROUND_DIM_OPTION, cardBackgroundDim(sourceOptions));
+  return setConfigOptionValue(out || "", CARD_BACKGROUND_IMAGE_OPTION, id);
 }
 
 function cardImageUrl(id) {

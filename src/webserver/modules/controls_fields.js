@@ -480,20 +480,6 @@ function renderCardBackgroundControl(panel, b, helpers) {
   actions.appendChild(deleteBtn);
   field.appendChild(actions);
 
-  var dim = document.createElement("input");
-  dim.type = "range";
-  dim.min = "0";
-  dim.max = "90";
-  dim.step = "5";
-  dim.value = cardBackgroundDim(b.options);
-  var dimField = document.createElement("div");
-  dimField.className = "sp-card-bg-dim";
-  var dimLabel = document.createElement("span");
-  dimLabel.textContent = "Dim Overlay";
-  dimField.appendChild(dimLabel);
-  dimField.appendChild(dim);
-  field.appendChild(dimField);
-
   function selectedImage() {
     return cardBackgroundImage(b.options);
   }
@@ -501,11 +487,6 @@ function renderCardBackgroundControl(panel, b, helpers) {
   function setBackground(id) {
     id = normalizeCardBackgroundImageId(id);
     b.options = setConfigOptionValue(b.options, CARD_BACKGROUND_IMAGE_OPTION, id);
-    if (id) {
-      b.options = setConfigOptionValue(b.options, CARD_BACKGROUND_DIM_OPTION, cardBackgroundDim(b.options));
-    } else {
-      b.options = setConfigOptionValue(b.options, CARD_BACKGROUND_DIM_OPTION, "");
-    }
     helpers.saveField("options", b.options);
     refreshPreview();
     renderPreview();
@@ -517,9 +498,7 @@ function renderCardBackgroundControl(panel, b, helpers) {
     preview.classList.toggle("sp-card-bg-preview-empty", !id);
     var iconName = iconSlug(resolveIcon(b));
     var title = b.label || b.entity || "Configure";
-    var opacity = id ? (parseInt(cardBackgroundDim(b.options), 10) / 100).toFixed(2) : "0";
     preview.innerHTML =
-      '<span class="sp-card-bg-preview-dim" style="background:rgba(0,0,0,' + opacity + ')"></span>' +
       '<span class="sp-card-bg-preview-icon mdi mdi-' + iconName + '"></span>' +
       '<span class="sp-card-bg-preview-title">' + escHtml(title) + '</span>';
     clearBtn.disabled = !id;
@@ -577,14 +556,6 @@ function renderCardBackgroundControl(panel, b, helpers) {
       return listCardImages(true);
     }).then(fillSelect);
   });
-  dim.addEventListener("input", function () {
-    if (!selectedImage()) return;
-    b.options = setConfigOptionValue(b.options, CARD_BACKGROUND_DIM_OPTION, normalizeCardBackgroundDim(this.value));
-    helpers.saveField("options", b.options);
-    refreshPreview();
-    renderPreview();
-  });
-
   fillSelect(_cardImageLibrary || []);
   listCardImages(false).then(fillSelect);
   panel.appendChild(field);
