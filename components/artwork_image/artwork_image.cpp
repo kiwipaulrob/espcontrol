@@ -161,7 +161,6 @@ void ArtworkImage::draw(int x, int y, display::Display *display, Color color_on,
 }
 
 void ArtworkImage::release() {
-  this->update_start_pending_ = false;
   this->update_pending_ = false;
   this->pending_url_.clear();
   this->end_connection_();
@@ -264,16 +263,11 @@ std::string ArtworkImage::request_update_url(const std::string &url, int max_sou
     return effective_url;
   }
   this->url_ = effective_url;
-  // Starting a local HTTP request can block for long enough to interrupt an
-  // RGB panel scan. Defer connection setup until this component's next loop
-  // instead of doing it inside an LVGL screen-load or image callback.
-  this->update_start_pending_ = true;
-  this->enable_loop();
+  this->update();
   return effective_url;
 }
 
 void ArtworkImage::cancel_update() {
-  this->update_start_pending_ = false;
   this->update_pending_ = false;
   this->pending_url_.clear();
   if (this->is_busy_()) {
@@ -283,7 +277,6 @@ void ArtworkImage::cancel_update() {
 }
 
 void ArtworkImage::update() {
-  this->update_start_pending_ = false;
   if (this->is_busy_()) {
     this->queue_pending_update_(this->url_);
     return;
@@ -521,11 +514,6 @@ size_t ArtworkImage::get_sane_content_length_() const {
 
 void ArtworkImage::loop() {
   this->cleanup_retired_buffers_(false);
-  if (this->update_start_pending_ && !this->is_busy_()) {
-    this->update_start_pending_ = false;
-    this->update();
-    return;
-  }
   if (!this->decoder_ && !this->downloader_) {
     if (this->retired_buffers_.empty()) {
       this->disable_loop();
@@ -1124,8 +1112,7 @@ void ArtworkImage::start_pending_update_() {
   this->update_pending_ = false;
   ESP_LOGI(TAG, "Starting queued artwork update");
   this->url_ = url;
-  this->update_start_pending_ = true;
-  this->enable_loop();
+  this->update();
 }
 
 void ArtworkImage::log_state_(const char *stage) {
