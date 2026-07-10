@@ -328,7 +328,7 @@ var CSS =
   ".sp-entity-option:hover,.sp-entity-option:focus{background:var(--accent-soft);outline:none}" +
   ".sp-field-error{font-size:.75rem;color:#f66f81;margin-top:6px;line-height:1.35}" +
   ".sp-card-bg-field{display:grid;gap:10px}" +
-  ".sp-card-bg-preview{height:128px;border:1px solid var(--border);border-radius:8px;" +
+  ".sp-card-bg-preview{width:min(220px,100%);aspect-ratio:1/1;border:1px solid var(--border);border-radius:8px;" +
   "background:#111 center/cover no-repeat;box-sizing:border-box;position:relative;overflow:hidden;" +
   "display:flex;flex-direction:column;justify-content:space-between;padding:14px}" +
   ".sp-card-bg-preview-empty{background:linear-gradient(135deg,var(--surface2),var(--surface));}" +
