@@ -12,6 +12,9 @@ inline std::function<void(lv_obj_t *)> &button_grid_screen_load_callback() {
 inline void button_grid_load_screen(lv_obj_t *screen) {
   if (!screen) return;
   lv_scr_load_anim(screen, LV_SCR_LOAD_ANIM_NONE, 0, 0, false);
+  // Subpage buttons are created while their screen is hidden. Force LVGL to
+  // resolve their grid cells before asking the image loader for their size.
+  lv_obj_update_layout(screen);
   auto &callback = button_grid_screen_load_callback();
   if (callback) callback(screen);
 }
