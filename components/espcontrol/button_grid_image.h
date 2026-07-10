@@ -1139,6 +1139,11 @@ inline CardBackgroundImageCtx::Binding *card_background_add_binding(CardBackgrou
                                                                     lv_obj_t *widget) {
   if (!ctx) return nullptr;
   for (auto &binding : ctx->bindings) {
+    if (binding.active && binding.btn == btn && binding.widget == widget) {
+      return &binding;
+    }
+  }
+  for (auto &binding : ctx->bindings) {
     if (!binding.active) {
       binding.active = true;
       binding.btn = btn;
@@ -1190,14 +1195,26 @@ inline void card_background_unregister_page(lv_obj_t *page) {
 
 inline void card_background_activate_page(const GridConfig &cfg, lv_obj_t *page) {
   if (!page) return;
-  card_background_active_page() = page;
   int total_refs = 0;
   int matched_refs = 0;
   int activated_refs = 0;
-  card_background_release_contexts(cfg);
+  for (const auto &ref : card_background_widget_refs()) {
+    if (card_background_widget_on_page(ref.btn, page)) matched_refs++;
+  }
+  if (matched_refs == 0) {
+    ESP_LOGD("card_background", "Ignoring page=%p with no background image refs", page);
+    return;
+  }
+
+  const bool same_page = card_background_active_page() == page;
+  if (!same_page) {
+    card_background_release_contexts(cfg);
+    card_background_active_page() = page;
+  }
+  matched_refs = 0;
   for (auto &ref : card_background_widget_refs()) {
     total_refs++;
-    image_card_clear_widget_source(ref.widget);
+    if (!same_page) image_card_clear_widget_source(ref.widget);
     if (!card_background_widget_on_page(ref.btn, page)) continue;
     matched_refs++;
     lv_obj_update_layout(ref.btn);
