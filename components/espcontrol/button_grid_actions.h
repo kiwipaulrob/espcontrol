@@ -9,6 +9,18 @@ inline std::function<void(lv_obj_t *)> &button_grid_screen_load_callback() {
   return callback;
 }
 
+constexpr uint32_t BUTTON_GRID_SCREEN_LOAD_REFRESH_DELAY_MS = 75;
+
+inline void button_grid_deferred_screen_load_cb(lv_timer_t *timer) {
+  if (!timer) return;
+  lv_obj_t *screen = static_cast<lv_obj_t *>(lv_timer_get_user_data(timer));
+  lv_timer_del(timer);
+  if (!screen || lv_scr_act() != screen) return;
+  lv_obj_update_layout(screen);
+  auto &callback = button_grid_screen_load_callback();
+  if (callback) callback(screen);
+}
+
 inline void button_grid_load_screen(lv_obj_t *screen) {
   if (!screen) return;
   lv_scr_load_anim(screen, LV_SCR_LOAD_ANIM_NONE, 0, 0, false);
@@ -17,6 +29,8 @@ inline void button_grid_load_screen(lv_obj_t *screen) {
   lv_obj_update_layout(screen);
   auto &callback = button_grid_screen_load_callback();
   if (callback) callback(screen);
+  lv_timer_create(button_grid_deferred_screen_load_cb,
+                  BUTTON_GRID_SCREEN_LOAD_REFRESH_DELAY_MS, screen);
 }
 
 inline bool is_button_entity(const std::string &entity_id) {

@@ -1149,6 +1149,10 @@ inline void card_background_activate_page(const GridConfig &cfg, lv_obj_t *page)
     lv_obj_update_layout(ref.btn);
     int target_width = lv_obj_get_width(ref.btn);
     int target_height = lv_obj_get_height(ref.btn);
+    if (target_width <= 0 || target_height <= 0) {
+      ESP_LOGD("card_background", "Waiting for card layout before activating background image: %s", ref.id.c_str());
+      continue;
+    }
     CardBackgroundImageCtx *ctx = acquire_card_background_image_context(
       cfg, ref.id, target_width, target_height);
     if (!ctx) {
@@ -1187,6 +1191,12 @@ inline void apply_card_background_image(BtnSlot &s, const ParsedCfg &p,
   lv_obj_set_style_bg_opa(img, LV_OPA_TRANSP, LV_PART_MAIN);
   image_card_apply_tile_image_align(img);
   card_background_register_widget(s.btn, img, id);
+
+  if (target_width <= 0 || target_height <= 0) {
+    lv_obj_move_background(img);
+    card_background_move_content_foreground(s);
+    return;
+  }
 
   CardBackgroundImageCtx *ctx = acquire_card_background_image_context(cfg, id, target_width, target_height);
   if (!ctx) {
