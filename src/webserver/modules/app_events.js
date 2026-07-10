@@ -4,13 +4,13 @@
 function connectEvents() {
   if (_eventSource) { _eventSource.close(); _eventSource = null; }
 
-  function markConnected() {
+  function markConnected(resetOrderState) {
     state.selectedSlots = [];
     state.lastClickedSlot = -1;
     state.editingSubpage = null;
     state.subpageSelectedSlots = [];
     state.subpageLastClicked = -1;
-    orderReceived = false;
+    if (resetOrderState) orderReceived = false;
     setConfigLocked(false);
     if (els.banner) els.banner.className = "sp-banner";
     els.root.querySelectorAll(".sp-apply-btn").forEach(function (btn) {
@@ -105,14 +105,18 @@ function connectEvents() {
   }
 
   if (!eventStreamEnabled()) {
-    loadInitialState(handleState, markConnected);
+    loadInitialState(handleState, function () {
+      markConnected(false);
+    });
     return;
   }
 
   var source = new EventSource("/events");
   _eventSource = source;
 
-  source.addEventListener("open", markConnected);
+  source.addEventListener("open", function () {
+    markConnected(true);
+  });
   source.addEventListener("error", function () {
     handleDisconnected(source);
   });
