@@ -24,6 +24,8 @@ constexpr uint8_t IMAGE_CARD_STARTUP_DOWNLOAD_RETRIES = 10;
 constexpr int IMAGE_CARD_MAX_CONTEXTS = 6;
 constexpr int CARD_BACKGROUND_IMAGE_MAX_CONTEXTS = 9;
 constexpr int CARD_BACKGROUND_IMAGE_MAX_BINDINGS = MAX_GRID_SLOTS * 4;
+constexpr uint8_t CARD_BACKGROUND_IMAGE_MAX_RETRIES = 3;
+constexpr uint32_t CARD_BACKGROUND_IMAGE_RETRY_DELAY_MS = 750;
 constexpr int IMAGE_CARD_MODAL_MAX_TARGET_SIDE_PX = 800;
 constexpr size_t IMAGE_CARD_MEMORY_HEADROOM_BYTES = 96 * 1024;
 constexpr lv_coord_t IMAGE_CARD_JC4880P443_MODAL_BACK_BUTTON_REF_PX = 58;
@@ -93,6 +95,8 @@ struct CardBackgroundImageCtx {
   bool requested_once = false;
   bool download_active = false;
   bool download_queued = false;
+  uint8_t retry_count = 0;
+  uint32_t retry_deadline_ms = 0;
   struct Binding {
     lv_obj_t *btn = nullptr;
     lv_obj_t *widget = nullptr;
@@ -846,6 +850,8 @@ inline void card_background_apply_downloaded(CardBackgroundImageCtx *ctx) {
   if (!ctx || !ctx->active || !ctx->image) return;
   if (ctx->image->get_url() != ctx->url) return;
   ctx->requested_once = true;
+  ctx->retry_count = 0;
+  ctx->retry_deadline_ms = 0;
   ESP_LOGI("card_background", "Applied card background image: %s", ctx->id.c_str());
   for (auto &binding : ctx->bindings) {
     if (!binding.active || !binding.widget) continue;
@@ -864,7 +870,15 @@ inline void card_background_apply_downloaded(CardBackgroundImageCtx *ctx) {
 inline void card_background_handle_download_error(CardBackgroundImageCtx *ctx) {
   if (!ctx || !ctx->active) return;
   card_background_release_download_slot(ctx);
-  ESP_LOGW("card_background", "Card background image download failed: %s", ctx->id.c_str());
+  if (ctx->retry_count < CARD_BACKGROUND_IMAGE_MAX_RETRIES) {
+    ctx->retry_count++;
+    ctx->retry_deadline_ms = esphome::millis() + CARD_BACKGROUND_IMAGE_RETRY_DELAY_MS;
+    ESP_LOGW("card_background", "Card background image download failed: %s; retry %u/%u scheduled",
+             ctx->id.c_str(), ctx->retry_count, CARD_BACKGROUND_IMAGE_MAX_RETRIES);
+  } else {
+    ESP_LOGW("card_background", "Card background image download failed after %u retries: %s",
+             CARD_BACKGROUND_IMAGE_MAX_RETRIES, ctx->id.c_str());
+  }
   for (auto &binding : ctx->bindings) {
     if (!binding.active) continue;
     if (binding.widget) lv_obj_add_flag(binding.widget, LV_OBJ_FLAG_HIDDEN);
@@ -923,6 +937,8 @@ inline void card_background_release_contexts(const GridConfig &cfg) {
     }
     contexts[i].download_active = false;
     contexts[i].download_queued = false;
+    contexts[i].retry_count = 0;
+    contexts[i].retry_deadline_ms = 0;
     contexts[i].image = i < count && cfg.card_background_images ? cfg.card_background_images[i] : nullptr;
     if (contexts[i].image) contexts[i].image->release();
   }
@@ -966,7 +982,29 @@ inline void card_background_deactivate_if_unused(CardBackgroundImageCtx *ctx) {
   ctx->target_width = 0;
   ctx->target_height = 0;
   ctx->requested_once = false;
+  ctx->retry_count = 0;
+  ctx->retry_deadline_ms = 0;
   if (ctx->image) ctx->image->release();
+}
+
+inline void card_background_refresh_due() {
+  CardBackgroundImageCtx *contexts = card_background_image_contexts();
+  CardBackgroundImageCtx *active_download = card_background_active_download_context();
+  uint32_t now = esphome::millis();
+  for (int i = 0; i < CARD_BACKGROUND_IMAGE_MAX_CONTEXTS; i++) {
+    CardBackgroundImageCtx *ctx = &contexts[i];
+    if (!ctx->active || ctx->download_active || ctx->retry_deadline_ms == 0 ||
+        static_cast<int32_t>(now - ctx->retry_deadline_ms) < 0) {
+      continue;
+    }
+    ctx->retry_deadline_ms = 0;
+    if (active_download && active_download != ctx) {
+      ctx->download_queued = true;
+    } else {
+      card_background_request_download(ctx);
+      active_download = card_background_active_download_context();
+    }
+  }
 }
 
 inline bool card_background_move_binding_to_size(CardBackgroundImageCtx *ctx,
@@ -2195,6 +2233,7 @@ inline void refresh_image_cards() {
 }
 
 inline void image_card_refresh_due() {
+  card_background_refresh_due();
   ImageCardCtx *contexts = image_card_contexts();
   uint32_t now = esphome::millis();
   for (int i = 0; i < IMAGE_CARD_MAX_CONTEXTS; i++) {
