@@ -35,10 +35,6 @@ function buttonTypeInfoOnlyVisible(key) {
   ].indexOf(key || "") !== -1;
 }
 
-function isEpaperPreview() {
-  return !!(CFG.features && CFG.features.epaper);
-}
-
 var CARD_TYPE_PICKER_DETAILS = {
   "": { icon: "toggle-switch", description: "Toggle lights, switches, helpers, or fans." },
   action: { icon: "flash", description: "Run a Home Assistant or local action." },
@@ -216,7 +212,7 @@ function renderPreview() {
           "repeating-linear-gradient(135deg,#" + onColor + " 0,#" + onColor +
           " 12px,rgba(255,255,255,.22) 12px,rgba(255,255,255,.22) 20px)";
       }
-      var bgImage = cardBackgroundSupported(b) && !isEpaperPreview() ? cardBackgroundImage(b.options) : "";
+      var bgImage = cardBackgroundSupported(b) ? cardBackgroundImage(b.options) : "";
       var bgOverlay = "";
       if (bgImage) {
         btn.className += " sp-btn-has-bg";
