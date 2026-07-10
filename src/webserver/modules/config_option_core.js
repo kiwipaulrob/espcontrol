@@ -118,8 +118,8 @@ function copyLargeNumbersOption(out, options) {
 }
 
 var _cardImageLibrary = [];
-var CARD_IMAGE_TARGET_SIZE = 320;
-var CARD_IMAGE_MAX_BYTES = 80 * 1024;
+var CARD_IMAGE_TARGET_SIZE = 240;
+var CARD_IMAGE_UPLOAD_MAX_BYTES = 60 * 1024;
 
 function cardBackgroundSupported(b) {
   if (!b) return false;
@@ -190,25 +190,45 @@ function resizeCardImageFile(file) {
       canvas.width = CARD_IMAGE_TARGET_SIZE;
       canvas.height = CARD_IMAGE_TARGET_SIZE;
       var context = canvas.getContext("2d");
+      context.imageSmoothingEnabled = true;
+      context.imageSmoothingQuality = "high";
       var scale = Math.max(CARD_IMAGE_TARGET_SIZE / image.naturalWidth, CARD_IMAGE_TARGET_SIZE / image.naturalHeight);
       var width = image.naturalWidth * scale;
       var height = image.naturalHeight * scale;
       context.drawImage(image, (CARD_IMAGE_TARGET_SIZE - width) / 2, (CARD_IMAGE_TARGET_SIZE - height) / 2, width, height);
-      var quality = 0.82;
-      var blob;
-      do {
+      function finish(blob, quality) {
+        if (!blob || blob.size > CARD_IMAGE_UPLOAD_MAX_BYTES) {
+          reject(new Error("Image is still too large after browser optimization."));
+          return;
+        }
+        blob.optimizedWidth = CARD_IMAGE_TARGET_SIZE;
+        blob.optimizedHeight = CARD_IMAGE_TARGET_SIZE;
+        blob.optimizedQuality = quality;
+        resolve(blob);
+      }
+      function encode(quality) {
+        if (canvas.toBlob) {
+          canvas.toBlob(function (blob) {
+            if (blob && blob.size > CARD_IMAGE_UPLOAD_MAX_BYTES && quality > 0.48) {
+              encode(Math.max(0.48, quality - 0.08));
+            } else {
+              finish(blob, quality);
+            }
+          }, "image/jpeg", quality);
+          return;
+        }
         var data = canvas.toDataURL("image/jpeg", quality);
         var raw = atob(data.substring(data.indexOf(",") + 1));
         var bytes = new Uint8Array(raw.length);
         for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-        blob = new Blob([bytes], { type: "image/jpeg" });
-        quality -= 0.08;
-      } while (blob.size > CARD_IMAGE_MAX_BYTES && quality >= 0.5);
-      if (blob.size > CARD_IMAGE_MAX_BYTES) {
-        reject(new Error("Image is still too large after resizing."));
-        return;
+        var blob = new Blob([bytes], { type: "image/jpeg" });
+        if (blob.size > CARD_IMAGE_UPLOAD_MAX_BYTES && quality > 0.48) {
+          encode(Math.max(0.48, quality - 0.08));
+        } else {
+          finish(blob, quality);
+        }
       }
-      resolve(blob);
+      encode(0.78);
     };
     image.onerror = function () {
       URL.revokeObjectURL(objectUrl);

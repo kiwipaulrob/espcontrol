@@ -41,6 +41,12 @@ function buildCardImageManagerCard() {
   actions.appendChild(refresh);
   body.appendChild(actions);
 
+  var note = infoPanel(
+    "sp-card-image-optimization-note",
+    "Images are resized and compressed in your browser to 240\u00d7240 JPEGs before upload, keeping the device fast."
+  );
+  body.appendChild(note);
+
   var list = document.createElement("div");
   list.className = "sp-card-image-manager-list";
   body.appendChild(list);
