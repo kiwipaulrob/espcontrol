@@ -118,6 +118,8 @@ function copyLargeNumbersOption(out, options) {
 }
 
 var _cardImageLibrary = [];
+var CARD_IMAGE_TARGET_SIZE = 320;
+var CARD_IMAGE_MAX_BYTES = 80 * 1024;
 
 function cardBackgroundSupported(b) {
   if (!b) return false;
@@ -174,11 +176,55 @@ function listCardImages(force) {
     });
 }
 
+function resizeCardImageFile(file) {
+  return new Promise(function (resolve, reject) {
+    if (!file || !file.type || file.type.indexOf("image/") !== 0) {
+      reject(new Error("Choose an image file."));
+      return;
+    }
+    var image = new Image();
+    var objectUrl = URL.createObjectURL(file);
+    image.onload = function () {
+      URL.revokeObjectURL(objectUrl);
+      var canvas = document.createElement("canvas");
+      canvas.width = CARD_IMAGE_TARGET_SIZE;
+      canvas.height = CARD_IMAGE_TARGET_SIZE;
+      var context = canvas.getContext("2d");
+      var scale = Math.max(CARD_IMAGE_TARGET_SIZE / image.naturalWidth, CARD_IMAGE_TARGET_SIZE / image.naturalHeight);
+      var width = image.naturalWidth * scale;
+      var height = image.naturalHeight * scale;
+      context.drawImage(image, (CARD_IMAGE_TARGET_SIZE - width) / 2, (CARD_IMAGE_TARGET_SIZE - height) / 2, width, height);
+      var quality = 0.82;
+      var blob;
+      do {
+        var data = canvas.toDataURL("image/jpeg", quality);
+        var raw = atob(data.substring(data.indexOf(",") + 1));
+        var bytes = new Uint8Array(raw.length);
+        for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+        blob = new Blob([bytes], { type: "image/jpeg" });
+        quality -= 0.08;
+      } while (blob.size > CARD_IMAGE_MAX_BYTES && quality >= 0.5);
+      if (blob.size > CARD_IMAGE_MAX_BYTES) {
+        reject(new Error("Image is still too large after resizing."));
+        return;
+      }
+      resolve(blob);
+    };
+    image.onerror = function () {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("Could not read that image."));
+    };
+    image.src = objectUrl;
+  });
+}
+
 function uploadCardImage(file) {
-  return fetch("/api/card-images", {
-    method: "POST",
-    headers: { "Content-Type": "image/jpeg" },
-    body: file,
+  return resizeCardImageFile(file).then(function (image) {
+    return fetch("/api/card-images", {
+      method: "POST",
+      headers: { "Content-Type": "image/jpeg" },
+      body: image,
+    });
   })
     .then(function (response) {
       if (!response.ok) throw new Error("Could not upload image.");

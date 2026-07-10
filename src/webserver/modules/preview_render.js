@@ -35,6 +35,10 @@ function buttonTypeInfoOnlyVisible(key) {
   ].indexOf(key || "") !== -1;
 }
 
+function isEpaperPreview() {
+  return !!(CFG.features && CFG.features.epaper);
+}
+
 var CARD_TYPE_PICKER_DETAILS = {
   "": { icon: "toggle-switch", description: "Toggle lights, switches, helpers, or fans." },
   action: { icon: "flash", description: "Run a Home Assistant or local action." },
