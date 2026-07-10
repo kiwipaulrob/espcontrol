@@ -9,6 +9,40 @@ inline std::function<void(lv_obj_t *)> &button_grid_screen_load_callback() {
   return callback;
 }
 
+struct ButtonGridSubpageScreenRef {
+  int slot = 0;
+  lv_obj_t *screen = nullptr;
+};
+
+inline std::vector<ButtonGridSubpageScreenRef> &button_grid_subpage_screens() {
+  static std::vector<ButtonGridSubpageScreenRef> screens;
+  return screens;
+}
+
+inline void button_grid_clear_subpage_screens() {
+  button_grid_subpage_screens().clear();
+}
+
+inline void button_grid_register_subpage_screen(int slot, lv_obj_t *screen) {
+  if (slot <= 0 || !screen) return;
+  auto &screens = button_grid_subpage_screens();
+  for (auto &entry : screens) {
+    if (entry.slot == slot) {
+      entry.screen = screen;
+      return;
+    }
+  }
+  screens.push_back({slot, screen});
+}
+
+inline lv_obj_t *button_grid_find_subpage_screen(int slot) {
+  if (slot <= 0) return nullptr;
+  for (auto &entry : button_grid_subpage_screens()) {
+    if (entry.slot == slot) return entry.screen;
+  }
+  return nullptr;
+}
+
 constexpr uint32_t BUTTON_GRID_SCREEN_LOAD_REFRESH_DELAY_MS = 75;
 
 inline void button_grid_deferred_screen_load_cb(lv_timer_t *timer) {
@@ -23,11 +57,14 @@ inline void button_grid_deferred_screen_load_cb(lv_timer_t *timer) {
 
 inline void button_grid_load_screen(lv_obj_t *screen) {
   if (!screen) return;
+  ESP_LOGD("button_grid", "Loading screen %p", screen);
   lv_scr_load_anim(screen, LV_SCR_LOAD_ANIM_NONE, 0, 0, false);
   // Subpage buttons are created while their screen is hidden. Force LVGL to
   // resolve their grid cells before asking the image loader for their size.
   lv_obj_update_layout(screen);
   auto &callback = button_grid_screen_load_callback();
+  ESP_LOGD("button_grid", "Screen load callback %s for %p",
+           callback ? "present" : "missing", screen);
   if (callback) callback(screen);
   lv_timer_create(button_grid_deferred_screen_load_cb,
                   BUTTON_GRID_SCREEN_LOAD_REFRESH_DELAY_MS, screen);
@@ -877,7 +914,8 @@ inline void handle_button_click(const std::string &cfg, int slot_num,
     ha_action_add_data(req, "slot", slot_buf);
     ha_action_send(req);
   } else if (p.type == "subpage") {
-    lv_obj_t *sub_scr = (lv_obj_t *)lv_obj_get_user_data(btn_obj);
+    lv_obj_t *sub_scr = button_grid_find_subpage_screen(slot_num);
+    if (!sub_scr) sub_scr = (lv_obj_t *)lv_obj_get_user_data(btn_obj);
     if (sub_scr) button_grid_load_screen(sub_scr);
   } else if (p.type == "alarm") {
     AlarmCardCtx *ctx = (AlarmCardCtx *)lv_obj_get_user_data(btn_obj);

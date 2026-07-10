@@ -1142,13 +1142,20 @@ inline void card_background_unregister_page(lv_obj_t *page) {
 
 inline void card_background_activate_page(const GridConfig &cfg, lv_obj_t *page) {
   if (!page) return;
+  int total_refs = 0;
+  int matched_refs = 0;
+  int activated_refs = 0;
   card_background_release_contexts(cfg);
   for (auto &ref : card_background_widget_refs()) {
+    total_refs++;
     image_card_clear_widget_source(ref.widget);
     if (!card_background_widget_on_page(ref.btn, page)) continue;
+    matched_refs++;
     lv_obj_update_layout(ref.btn);
     int target_width = lv_obj_get_width(ref.btn);
     int target_height = lv_obj_get_height(ref.btn);
+    ESP_LOGD("card_background", "Activating ref page=%p btn=%p id=%s size=%dx%d",
+             page, ref.btn, ref.id.c_str(), target_width, target_height);
     if (target_width <= 0 || target_height <= 0) {
       ESP_LOGD("card_background", "Waiting for card layout before activating background image: %s", ref.id.c_str());
       continue;
@@ -1167,7 +1174,10 @@ inline void card_background_activate_page(const GridConfig &cfg, lv_obj_t *page)
     card_background_position_widget(binding->btn, binding->widget);
     card_background_configure_target_size(ctx, target_width, target_height);
     card_background_sync_binding_image(ctx, binding);
+    activated_refs++;
   }
+  ESP_LOGD("card_background", "Activated page=%p refs=%d matched=%d active=%d",
+           page, total_refs, matched_refs, activated_refs);
 }
 
 inline void apply_card_background_image(BtnSlot &s, const ParsedCfg &p,
