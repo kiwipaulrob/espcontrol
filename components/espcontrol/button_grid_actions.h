@@ -9,11 +9,31 @@ inline std::function<void(lv_obj_t *)> &button_grid_screen_load_callback() {
   return callback;
 }
 
+inline std::vector<lv_obj_t *> &button_grid_screen_load_event_targets() {
+  static std::vector<lv_obj_t *> targets;
+  return targets;
+}
+
+inline void button_grid_register_screen_load_callback(lv_obj_t *screen) {
+  if (!screen) return;
+  auto &targets = button_grid_screen_load_event_targets();
+  if (std::find(targets.begin(), targets.end(), screen) != targets.end()) return;
+  targets.push_back(screen);
+  lv_obj_add_event_cb(screen, [](lv_event_t *e) {
+    auto &callback = button_grid_screen_load_callback();
+    if (callback) callback(static_cast<lv_obj_t *>(lv_event_get_target(e)));
+  }, LV_EVENT_SCREEN_LOADED, nullptr);
+  lv_obj_add_event_cb(screen, [](lv_event_t *e) {
+    lv_obj_t *target = static_cast<lv_obj_t *>(lv_event_get_target(e));
+    auto &targets = button_grid_screen_load_event_targets();
+    targets.erase(std::remove(targets.begin(), targets.end(), target), targets.end());
+  }, LV_EVENT_DELETE, nullptr);
+}
+
 inline void button_grid_load_screen(lv_obj_t *screen) {
   if (!screen) return;
+  button_grid_register_screen_load_callback(screen);
   lv_scr_load_anim(screen, LV_SCR_LOAD_ANIM_NONE, 0, 0, false);
-  auto &callback = button_grid_screen_load_callback();
-  if (callback) callback(screen);
 }
 
 inline bool is_button_entity(const std::string &entity_id) {
