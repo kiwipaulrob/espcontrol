@@ -375,18 +375,31 @@ esp_err_t handle_card_image_upload(httpd_req_t *r) {
     return ESP_OK;
   }
   std::unique_ptr<char[]> buffer(new char[1024]);
-  std::string image;
-  image.resize(r->content_len);
+  size_t slot_offset = static_cast<size_t>(slot) * CARD_IMAGE_SLOT_SIZE;
+  esp_err_t err = esp_partition_erase_range(partition, slot_offset, CARD_IMAGE_SLOT_SIZE);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to erase card image slot: %s", esp_err_to_name(err));
+    httpd_resp_send_err(r, HTTPD_500_INTERNAL_SERVER_ERROR, "Upload failed");
+    return ESP_OK;
+  }
   size_t remaining = r->content_len;
   size_t offset = 0;
   while (remaining > 0) {
     size_t want = remaining > 1024 ? 1024 : remaining;
     int ret = httpd_req_recv(r, buffer.get(), want);
     if (ret <= 0) {
+      esp_partition_erase_range(partition, slot_offset, CARD_IMAGE_SLOT_SIZE);
       httpd_resp_send_err(r, HTTPD_400_BAD_REQUEST, "Upload failed");
       return ESP_OK;
     }
-    memcpy(&image[offset], buffer.get(), static_cast<size_t>(ret));
+    err = esp_partition_write(partition, slot_offset + sizeof(CardImageHeader) + offset,
+                              buffer.get(), static_cast<size_t>(ret));
+    if (err != ESP_OK) {
+      esp_partition_erase_range(partition, slot_offset, CARD_IMAGE_SLOT_SIZE);
+      ESP_LOGE(TAG, "Failed to write card image chunk: %s", esp_err_to_name(err));
+      httpd_resp_send_err(r, HTTPD_500_INTERNAL_SERVER_ERROR, "Upload failed");
+      return ESP_OK;
+    }
     offset += static_cast<size_t>(ret);
     remaining -= static_cast<size_t>(ret);
   }
@@ -395,13 +408,10 @@ esp_err_t handle_card_image_upload(httpd_req_t *r) {
   header.version = CARD_IMAGE_VERSION;
   header.size = r->content_len;
   strlcpy(header.id, id.c_str(), sizeof(header.id));
-  size_t slot_offset = static_cast<size_t>(slot) * CARD_IMAGE_SLOT_SIZE;
-  esp_err_t err = esp_partition_erase_range(partition, slot_offset, CARD_IMAGE_SLOT_SIZE);
-  if (err == ESP_OK) err = esp_partition_write(partition, slot_offset, &header, sizeof(header));
-  if (err == ESP_OK) err = esp_partition_write(partition, slot_offset + sizeof(header), image.data(), image.size());
+  err = esp_partition_write(partition, slot_offset, &header, sizeof(header));
   if (err != ESP_OK) {
     esp_partition_erase_range(partition, slot_offset, CARD_IMAGE_SLOT_SIZE);
-    ESP_LOGE(TAG, "Failed to write card image: %s", esp_err_to_name(err));
+    ESP_LOGE(TAG, "Failed to write card image header: %s", esp_err_to_name(err));
     httpd_resp_send_err(r, HTTPD_500_INTERNAL_SERVER_ERROR, "Upload failed");
     return ESP_OK;
   }
