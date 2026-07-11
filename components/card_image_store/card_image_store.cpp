@@ -4,6 +4,7 @@
 #include "esphome/core/log.h"
 
 #include "esp_random.h"
+#include "esp_heap_caps.h"
 #include "esp_rom_crc.h"
 
 #include <algorithm>
@@ -19,6 +20,7 @@ static constexpr uint32_t CARD_IMAGE_INDEX_MAGIC = 0x43494E58;  // CINX
 static constexpr uint32_t CARD_IMAGE_INDEX_VERSION = 1;
 static constexpr uint32_t CARD_IMAGE_CACHE_MAGIC = 0x4354484D;  // CTHM
 static constexpr uint32_t CARD_IMAGE_CACHE_VERSION = 1;
+static constexpr size_t CARD_IMAGE_RAM_CACHE_MAX_BYTES = 1536 * 1024;
 static constexpr esp_partition_subtype_t CARD_IMAGE_PARTITION_SUBTYPE =
     static_cast<esp_partition_subtype_t>(0x40);
 
@@ -537,7 +539,60 @@ int CardImageStore::find_cache_index_(const std::string &id, uint32_t source_crc
   return -1;
 }
 
+int CardImageStore::find_ram_cache_index_(const std::string &id, uint32_t source_crc32,
+                                          uint16_t width, uint16_t height) const {
+  for (size_t i = 0; i < this->ram_caches_.size(); i++) {
+    const auto &cache = this->ram_caches_[i];
+    if (cache.id == id && cache.source_crc32 == source_crc32 &&
+        cache.width == width && cache.height == height) {
+      return static_cast<int>(i);
+    }
+  }
+  return -1;
+}
+
+void CardImageStore::remember_rgb565_cache_(const std::string &id, uint32_t source_crc32,
+                                             uint16_t width, uint16_t height,
+                                             const uint8_t *buffer, size_t size) {
+  if (buffer == nullptr || size == 0 || size > CARD_IMAGE_RAM_CACHE_MAX_BYTES) return;
+  int existing = this->find_ram_cache_index_(id, source_crc32, width, height);
+  if (existing >= 0) {
+    this->ram_caches_[existing].last_used = ++this->ram_cache_clock_;
+    return;
+  }
+  while (!this->ram_caches_.empty() &&
+         this->ram_cache_bytes_ + size > CARD_IMAGE_RAM_CACHE_MAX_BYTES) {
+    auto oldest = std::min_element(this->ram_caches_.begin(), this->ram_caches_.end(),
+                                   [](const auto &a, const auto &b) {
+                                     return a.last_used < b.last_used;
+                                   });
+    this->ram_cache_bytes_ -= oldest->size;
+    heap_caps_free(oldest->data);
+    this->ram_caches_.erase(oldest);
+  }
+  auto *copy = static_cast<uint8_t *>(heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (copy == nullptr) return;
+  memcpy(copy, buffer, size);
+  this->ram_caches_.push_back(
+      {id, source_crc32, width, height, copy, size, ++this->ram_cache_clock_});
+  this->ram_cache_bytes_ += size;
+}
+
+void CardImageStore::erase_ram_caches_for_id_(const std::string &id) {
+  auto it = this->ram_caches_.begin();
+  while (it != this->ram_caches_.end()) {
+    if (it->id != id) {
+      ++it;
+      continue;
+    }
+    this->ram_cache_bytes_ -= it->size;
+    heap_caps_free(it->data);
+    it = this->ram_caches_.erase(it);
+  }
+}
+
 void CardImageStore::erase_caches_for_id_(const std::string &id) {
+  this->erase_ram_caches_for_id_(id);
   auto it = this->caches_.begin();
   while (it != this->caches_.end()) {
     if (it->id != id) {
@@ -553,6 +608,14 @@ bool CardImageStore::read_rgb565_cache(const std::string &id, uint32_t source_cr
                                        uint16_t width, uint16_t height, uint8_t *buffer,
                                        size_t size) {
   this->ensure_index_();
+  uint32_t started = millis();
+  int ram_index = this->find_ram_cache_index_(id, source_crc32, width, height);
+  if (ram_index >= 0 && buffer != nullptr && size == this->ram_caches_[ram_index].size) {
+    memcpy(buffer, this->ram_caches_[ram_index].data, size);
+    this->ram_caches_[ram_index].last_used = ++this->ram_cache_clock_;
+    ESP_LOGI(TAG, "Loaded RGB565 card image %s from RAM in %u ms", id.c_str(), millis() - started);
+    return true;
+  }
   int index = this->find_cache_index_(id, source_crc32, width, height);
   if (index < 0 || buffer == nullptr || size != this->caches_[index].size) return false;
   const auto cache = this->caches_[index];
@@ -565,6 +628,8 @@ bool CardImageStore::read_rgb565_cache(const std::string &id, uint32_t source_cr
     this->persist_index_();
     return false;
   }
+  this->remember_rgb565_cache_(id, source_crc32, width, height, buffer, size);
+  ESP_LOGI(TAG, "Loaded RGB565 card image %s from flash in %u ms", id.c_str(), millis() - started);
   return true;
 }
 
@@ -578,17 +643,30 @@ esp_err_t CardImageStore::write_rgb565_cache(const std::string &id, uint32_t sou
   }
   if (this->find_cache_index_(id, source_crc32, width, height) >= 0) return ESP_OK;
 
+  bool removed_stale_cache = false;
   auto stale = this->caches_.begin();
   while (stale != this->caches_.end()) {
     if (stale->id == id && stale->width == width && stale->height == height) {
       esp_partition_erase_range(this->partition_(), stale->offset, record_size(stale->size));
       stale = this->caches_.erase(stale);
+      removed_stale_cache = true;
     } else {
       ++stale;
     }
   }
+  if (removed_stale_cache && !this->persist_index_()) return ESP_FAIL;
 
   int offset = this->find_empty_offset_(size);
+  while (offset < 0 && !this->caches_.empty()) {
+    const auto evicted = this->caches_.front();
+    ESP_LOGI(TAG, "Evicting rebuildable RGB565 cache for %s to free image space", evicted.id.c_str());
+    esp_err_t erase_err = esp_partition_erase_range(
+        this->partition_(), evicted.offset, record_size(evicted.size));
+    if (erase_err != ESP_OK) return erase_err;
+    this->caches_.erase(this->caches_.begin());
+    if (!this->persist_index_()) return ESP_FAIL;
+    offset = this->find_empty_offset_(size);
+  }
   if (offset < 0) return ESP_ERR_NO_MEM;
   size_t stored_size = record_size(size);
   esp_err_t err = esp_partition_erase_range(this->partition_(), offset, stored_size);
@@ -618,6 +696,7 @@ esp_err_t CardImageStore::write_rgb565_cache(const std::string &id, uint32_t sou
     esp_partition_erase_range(this->partition_(), offset, stored_size);
     return ESP_FAIL;
   }
+  this->remember_rgb565_cache_(id, source_crc32, width, height, buffer, size);
   ESP_LOGI(TAG, "Cached RGB565 card image %s at %ux%u (%zu bytes)", id.c_str(), width, height, size);
   return ESP_OK;
 }

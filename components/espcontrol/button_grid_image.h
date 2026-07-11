@@ -951,11 +951,10 @@ inline void card_background_apply_downloaded(CardBackgroundImageCtx *ctx, bool c
     lv_obj_move_background(binding.widget);
     if (binding.btn) lv_obj_invalidate(binding.btn);
   }
-  bool revealed = card_background_reveal_ready_widgets();
+  card_background_reveal_ready_widgets();
   notify_dashboard_content_changed();
   // Release the decoder through a short asynchronous handoff. This gives LVGL
   // a frame to paint the completed card without blocking on a forced refresh.
-  (void) revealed;
   card_background_release_download_slot(ctx);
 }
 

@@ -154,6 +154,12 @@ class CardImageStore {
                                              size_t offset) const;
   int find_cache_index_(const std::string &id, uint32_t source_crc32,
                         uint16_t width, uint16_t height) const;
+  int find_ram_cache_index_(const std::string &id, uint32_t source_crc32,
+                            uint16_t width, uint16_t height) const;
+  void remember_rgb565_cache_(const std::string &id, uint32_t source_crc32,
+                              uint16_t width, uint16_t height,
+                              const uint8_t *buffer, size_t size);
+  void erase_ram_caches_for_id_(const std::string &id);
   void erase_caches_for_id_(const std::string &id);
   int find_index_(const std::string &id) const;
   static uint32_t crc32_update_(uint32_t crc, const uint8_t *data, size_t size);
@@ -166,6 +172,18 @@ class CardImageStore {
   size_t active_index_slot_{0};
   std::vector<CardImageInfo> images_{};
   std::vector<CardImageCacheInfo> caches_{};
+  struct RamImageCache {
+    std::string id;
+    uint32_t source_crc32{0};
+    uint16_t width{0};
+    uint16_t height{0};
+    uint8_t *data{nullptr};
+    size_t size{0};
+    uint32_t last_used{0};
+  };
+  std::vector<RamImageCache> ram_caches_{};
+  size_t ram_cache_bytes_{0};
+  uint32_t ram_cache_clock_{0};
   std::vector<std::pair<std::string, size_t>> readers_{};
 };
 
