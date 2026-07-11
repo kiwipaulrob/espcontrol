@@ -421,6 +421,8 @@ def cfg_lines(device: dict) -> list[str]:
     for num in range(1, card_background_count + 1):
         lines.append(f"              id(card_background_download_{num}),")
     lines.append("            };")
+    lines.append("            static_assert(sizeof(card_background_downloaders) / sizeof(card_background_downloaders[0]) == MAX_GRID_SLOTS,")
+    lines.append('                          "Card background decoder count must match this device grid");')
     lines.append("            cfg.card_background_images = card_background_downloaders;")
     lines.append(f"            cfg.card_background_image_count = {card_background_count};")
     lines.append("            cfg.home_assistant_base_url = []() {")

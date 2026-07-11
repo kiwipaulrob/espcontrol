@@ -1,5 +1,5 @@
 // ── Export / Import ────────────────────────────────────────────────────
-// @web-module-requires: state, language_state, environment_state, screen_rotation_state, screen_schedule_state, screen_schedule_post_api, ntp_state, idle_state, artwork_state, screensaver_state, clock_bar_state, clock_bar_post_api, firmware_update_state, screensaver_timeout, api, artwork_post_api, config_codec, config_post_api, backup_contract
+// @web-module-requires: state, language_state, environment_state, screen_rotation_state, screen_schedule_state, screen_schedule_post_api, ntp_state, idle_state, artwork_state, screensaver_state, clock_bar_state, clock_bar_post_api, firmware_update_state, screensaver_timeout, api, artwork_post_api, config_codec, config_post_api, backup_contract, card_image_service
 
 function backupExportScreenSizeSlug(value) {
   value = String(value || "").trim().toLowerCase();
@@ -139,14 +139,39 @@ function backupRestoreArchivedImages(entries) {
     return Promise.reject(new Error("ZIP backup has an unsupported image manifest."));
   }
   var idMap = {};
-  return manifest.images.reduce(function (chain, image) {
-    return chain.then(function () {
+  var createdIds = [];
+  var seenIds = {};
+  var totalBytes = 0;
+  for (var manifestIndex = 0; manifestIndex < manifest.images.length; manifestIndex++) {
+    var manifestImage = manifest.images[manifestIndex];
+    var manifestId = normalizeCardBackgroundImageId(manifestImage && manifestImage.id);
+    var manifestFile = String(manifestImage && manifestImage.file || "");
+    var manifestBytes = entries[manifestFile];
+    if (!manifestId || seenIds[manifestId] || manifestFile !== "images/" + manifestId + ".jpg" || !manifestBytes) {
+      return Promise.reject(new Error("ZIP backup has an invalid or missing archived card image."));
+    }
+    seenIds[manifestId] = true;
+    totalBytes += Math.ceil((128 + manifestBytes.length) / 4096) * 4096;
+  }
+
+  function rollbackCreatedImages(error) {
+    return createdIds.reduce(function (chain, id) {
+      return chain.then(function () { return deleteCardImage(id).catch(function () {}); });
+    }, Promise.resolve()).then(function () {
+      _cardImageLibrary = [];
+      throw error;
+    });
+  }
+
+  return listCardImages(true).then(function () {
+    var info = cardImageLibraryInfo();
+    if (!info.available) throw new Error("Card image storage is unavailable on this display.");
+    if (totalBytes > info.freeBytes) throw new Error("The backup images need more free storage than this display has available.");
+    return manifest.images.reduce(function (chain, image) {
+      return chain.then(function () {
       var oldId = normalizeCardBackgroundImageId(image && image.id);
       var file = String(image && image.file || "");
       var bytes = entries[file];
-      if (!oldId || file !== "images/" + oldId + ".jpg" || !bytes) {
-        throw new Error("ZIP backup is missing an archived card image.");
-      }
       return fetch("/api/card-images", {
         method: "POST",
         headers: { "Content-Type": "image/jpeg" },
@@ -161,15 +186,17 @@ function backupRestoreArchivedImages(entries) {
       }).then(function (restored) {
         var newId = normalizeCardBackgroundImageId(restored && restored.id);
         if (!newId) throw new Error("Could not restore an archived card image.");
+        createdIds.push(newId);
         idMap[oldId] = newId;
         var name = String(image && image.name || oldId).trim();
         return name && name !== newId ? renameCardImage(newId, name) : null;
       });
-    });
-  }, Promise.resolve()).then(function () {
+      });
+    }, Promise.resolve());
+  }).then(function () {
     _cardImageLibrary = [];
     return idMap;
-  });
+  }).catch(rollbackCreatedImages);
 }
 
 function backupRemapImportedImageReferences(backupPlan, idMap) {

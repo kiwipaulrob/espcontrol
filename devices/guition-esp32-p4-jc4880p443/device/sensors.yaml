@@ -112,6 +112,8 @@ script:
             id(card_background_download_5),
             id(card_background_download_6),
           };
+          static_assert(sizeof(card_background_downloaders) / sizeof(card_background_downloaders[0]) == MAX_GRID_SLOTS,
+                        "Card background decoder count must match this device grid");
           cfg.card_background_images = card_background_downloaders;
           cfg.card_background_image_count = 6;
           cfg.home_assistant_base_url = []() {
@@ -295,6 +297,8 @@ esphome:
               id(card_background_download_5),
               id(card_background_download_6),
             };
+            static_assert(sizeof(card_background_downloaders) / sizeof(card_background_downloaders[0]) == MAX_GRID_SLOTS,
+                          "Card background decoder count must match this device grid");
             cfg.card_background_images = card_background_downloaders;
             cfg.card_background_image_count = 6;
             cfg.home_assistant_base_url = []() {
@@ -470,6 +474,8 @@ esphome:
               id(card_background_download_5),
               id(card_background_download_6),
             };
+            static_assert(sizeof(card_background_downloaders) / sizeof(card_background_downloaders[0]) == MAX_GRID_SLOTS,
+                          "Card background decoder count must match this device grid");
             cfg.card_background_images = card_background_downloaders;
             cfg.card_background_image_count = 6;
             cfg.home_assistant_base_url = []() {

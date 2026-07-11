@@ -120,6 +120,19 @@ def test_generated_yaml(profiles: dict[str, dict]) -> None:
         assert f'device_slug: "{slug}"' in package, f"{slug}: packages.yaml missing device slug"
         assert f'firmware_manifest_slug: "{slug}"' in package, f"{slug}: packages.yaml missing manifest slug"
         assert f"cfg.num_slots = {profile['slots']};" in sensors, f"{slug}: sensors.yaml missing slot count"
+        slots = int(profile["slots"])
+        assert f"cfg.card_background_image_count = {slots};" in sensors, (
+            f"{slug}: sensors.yaml background-image capacity must match its card slots"
+        )
+        assert f"id(card_background_download_{slots})," in sensors, (
+            f"{slug}: sensors.yaml missing its final background-image decoder"
+        )
+        assert f"id(card_background_download_{slots + 1})," not in sensors, (
+            f"{slug}: sensors.yaml allocates more background-image decoders than card slots"
+        )
+        assert "Card background decoder count must match this device grid" in sensors, (
+            f"{slug}: sensors.yaml missing the background capacity compile-time guard"
+        )
         limit = image_card_limit(profile)
         if limit > 0:
             package_name = "image_cards.yaml" if limit == 4 else f"image_cards_{limit}.yaml"

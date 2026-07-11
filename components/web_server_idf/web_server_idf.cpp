@@ -4,20 +4,15 @@
 #include <memory>
 #include <cstring>
 #include <cctype>
-#include <cinttypes>
 #include <cstdio>
 #include <algorithm>
 #include <vector>
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <unistd.h>
 
 #include "esphome/core/helpers.h"
 #include "esphome/core/log.h"
 #include "esphome/core/defines.h"
 
 #include "esp_tls_crypto.h"
-#include "esp_partition.h"
 #include "esphome/components/card_image_store/card_image_store.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -49,11 +44,6 @@ namespace esphome::web_server_idf {
 #define CRLF_LEN (sizeof(CRLF_STR) - 1)
 
 static const char *const TAG = "web_server_idf";
-static constexpr size_t CARD_IMAGE_MAX_BYTES = 64 * 1024;
-static constexpr size_t CARD_IMAGE_NAME_MAX_LENGTH = 40;
-static constexpr size_t CARD_IMAGE_FLASH_SECTOR_SIZE = 4096;
-static constexpr uint32_t CARD_IMAGE_MAGIC = 0x43494D47;  // "CIMG"
-static constexpr uint32_t CARD_IMAGE_VERSION = 1;
 
 // Global instance to avoid guard variable (saves 8 bytes)
 // This is initialized at program startup before any threads
@@ -139,11 +129,7 @@ void apply_no_cache_headers(httpd_req_t *req) {
 }
 
 bool card_image_id_valid(const std::string &id) {
-  if (id.empty() || id.size() > 40) return false;
-  for (char ch : id) {
-    if (!((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-')) return false;
-  }
-  return true;
+  return card_image_store::CardImageStore::id_valid(id);
 }
 
 std::string card_image_id_from_url(const std::string &url, const char *prefix) {
@@ -154,99 +140,8 @@ std::string card_image_id_from_url(const std::string &url, const char *prefix) {
   return card_image_id_valid(rest) ? rest : "";
 }
 
-struct CardImageHeader {
-  uint32_t magic;
-  uint32_t version;
-  uint32_t size;
-  uint32_t reserved;
-  char id[48];
-  char name[48];
-  uint8_t padding[16];
-};
-
-static_assert(sizeof(CardImageHeader) == 128, "Card image flash header must remain one flash-aligned block");
-
-const esp_partition_t *card_image_partition() {
-  static const esp_partition_t *partition = nullptr;
-  static bool attempted = false;
-  if (attempted) return partition;
-  attempted = true;
-  partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, "spiffs");
-  if (partition == nullptr) {
-    partition = esp_partition_find_first(ESP_PARTITION_TYPE_DATA, ESP_PARTITION_SUBTYPE_DATA_SPIFFS, nullptr);
-  }
-  if (partition == nullptr) {
-    ESP_LOGW(TAG, "Card image storage partition not found");
-  } else if (partition->size < CARD_IMAGE_FLASH_SECTOR_SIZE) {
-    ESP_LOGW(TAG, "Card image storage partition is too small: %u bytes", static_cast<unsigned>(partition->size));
-    partition = nullptr;
-  } else {
-    ESP_LOGI(TAG, "Using card image storage partition '%s' at 0x%08" PRIx32 " (%u bytes)",
-             partition->label, partition->address, static_cast<unsigned>(partition->size));
-  }
-  return partition;
-}
-
-size_t card_image_record_size(size_t image_size) {
-  size_t bytes = sizeof(CardImageHeader) + image_size;
-  return ((bytes + CARD_IMAGE_FLASH_SECTOR_SIZE - 1) / CARD_IMAGE_FLASH_SECTOR_SIZE) * CARD_IMAGE_FLASH_SECTOR_SIZE;
-}
-
-bool card_image_header_valid(CardImageHeader &header) {
-  if (header.magic != CARD_IMAGE_MAGIC || header.version != CARD_IMAGE_VERSION) return false;
-  if (header.size == 0 || header.size > CARD_IMAGE_MAX_BYTES) return false;
-  header.id[sizeof(header.id) - 1] = '\0';
-  header.name[sizeof(header.name) - 1] = '\0';
-  if (!card_image_id_valid(header.id)) return false;
-  return true;
-}
-
-bool read_card_image_header_at(size_t offset, CardImageHeader &header) {
-  const esp_partition_t *partition = card_image_partition();
-  if (partition == nullptr || offset + sizeof(header) > partition->size) return false;
-  if (esp_partition_read(partition, offset, &header, sizeof(header)) != ESP_OK) return false;
-  return card_image_header_valid(header);
-}
-
 std::string normalize_card_image_name(const std::string &value) {
-  std::string out;
-  out.reserve(std::min(value.size(), CARD_IMAGE_NAME_MAX_LENGTH));
-  bool previous_space = false;
-  for (char raw : value) {
-    unsigned char ch = static_cast<unsigned char>(raw);
-    if (ch < 0x20 || ch == 0x7F) continue;
-    if (raw == ',' || raw == ';') continue;
-    if (std::isspace(ch)) {
-      if (!out.empty() && !previous_space) {
-        out.push_back(' ');
-        previous_space = true;
-      }
-      continue;
-    }
-    out.push_back(raw);
-    previous_space = false;
-    if (out.size() >= CARD_IMAGE_NAME_MAX_LENGTH) break;
-  }
-  while (!out.empty() && out.back() == ' ') out.pop_back();
-  return out;
-}
-
-std::string card_image_display_name(const CardImageHeader &header) {
-  std::string name = normalize_card_image_name(header.name);
-  return name.empty() ? std::string(header.id) : name;
-}
-
-std::string card_image_item_json(const CardImageHeader &header) {
-  std::string body = "{\"id\":";
-  append_json_string(body, header.id);
-  body += ",\"name\":";
-  append_json_string(body, card_image_display_name(header).c_str());
-  body += ",\"size\":";
-  body += std::to_string(header.size);
-  body += ",\"url\":\"/card-images/";
-  body += header.id;
-  body += ".jpg\"}";
-  return body;
+  return card_image_store::CardImageStore::normalize_name(value);
 }
 
 std::string card_image_item_json(const card_image_store::CardImageInfo &image) {
@@ -257,81 +152,6 @@ std::string card_image_item_json(const card_image_store::CardImageInfo &image) {
   body += ",\"size\":" + std::to_string(image.size);
   body += ",\"url\":\"/card-images/" + image.id + ".jpg\"}";
   return body;
-}
-
-int find_card_image_offset(const std::string &id) {
-  const esp_partition_t *partition = card_image_partition();
-  if (partition == nullptr) return -1;
-  CardImageHeader header {};
-  for (size_t offset = 0; offset + sizeof(header) <= partition->size; offset += CARD_IMAGE_FLASH_SECTOR_SIZE) {
-    if (read_card_image_header_at(offset, header) && id == header.id) return static_cast<int>(offset);
-  }
-  return -1;
-}
-
-esp_err_t update_card_image_name(const std::string &id, const std::string &name, CardImageHeader &header) {
-  int offset = find_card_image_offset(id);
-  const esp_partition_t *partition = card_image_partition();
-  if (offset < 0 || partition == nullptr || !read_card_image_header_at(static_cast<size_t>(offset), header)) {
-    return ESP_ERR_NOT_FOUND;
-  }
-  strlcpy(header.name, name.c_str(), sizeof(header.name));
-  size_t record_offset = static_cast<size_t>(offset);
-  std::unique_ptr<uint8_t[]> sector(new uint8_t[CARD_IMAGE_FLASH_SECTOR_SIZE]);
-  esp_err_t err = esp_partition_read(partition, record_offset, sector.get(), CARD_IMAGE_FLASH_SECTOR_SIZE);
-  if (err == ESP_OK) {
-    memcpy(sector.get(), &header, sizeof(header));
-    err = esp_partition_erase_range(partition, record_offset, CARD_IMAGE_FLASH_SECTOR_SIZE);
-  }
-  if (err == ESP_OK) {
-    err = esp_partition_write(partition, record_offset, sector.get(), CARD_IMAGE_FLASH_SECTOR_SIZE);
-  }
-  return err;
-}
-
-size_t card_image_used_bytes() {
-  const esp_partition_t *partition = card_image_partition();
-  if (partition == nullptr) return 0;
-  size_t used = 0;
-  CardImageHeader header {};
-  for (size_t offset = 0; offset + sizeof(header) <= partition->size; offset += CARD_IMAGE_FLASH_SECTOR_SIZE) {
-    if (!read_card_image_header_at(offset, header)) continue;
-    size_t record_size = card_image_record_size(header.size);
-    if (offset + record_size <= partition->size) used += record_size;
-  }
-  return used;
-}
-
-int find_empty_card_image_offset(size_t image_size) {
-  const esp_partition_t *partition = card_image_partition();
-  if (partition == nullptr) return -1;
-  size_t required_sectors = card_image_record_size(image_size) / CARD_IMAGE_FLASH_SECTOR_SIZE;
-  size_t total_sectors = partition->size / CARD_IMAGE_FLASH_SECTOR_SIZE;
-  if (required_sectors == 0 || required_sectors > total_sectors) return -1;
-  std::vector<uint8_t> used(total_sectors, 0);
-  CardImageHeader header {};
-  for (size_t sector = 0; sector < total_sectors; sector++) {
-    size_t offset = sector * CARD_IMAGE_FLASH_SECTOR_SIZE;
-    if (!read_card_image_header_at(offset, header)) continue;
-    size_t record_sectors = card_image_record_size(header.size) / CARD_IMAGE_FLASH_SECTOR_SIZE;
-    if (record_sectors == 0 || sector + record_sectors > total_sectors) continue;
-    for (size_t i = 0; i < record_sectors; i++) used[sector + i] = 1;
-  }
-  size_t run = 0;
-  size_t start = 0;
-  for (size_t sector = 0; sector < total_sectors; sector++) {
-    if (used[sector]) {
-      run = 0;
-      start = sector + 1;
-      continue;
-    }
-    if (run == 0) start = sector;
-    run++;
-    if (run >= required_sectors) {
-      return static_cast<int>(start * CARD_IMAGE_FLASH_SECTOR_SIZE);
-    }
-  }
-  return -1;
 }
 
 std::string card_image_list_json() {
@@ -376,19 +196,6 @@ std::string card_image_list_json() {
   }
   out += "]}";
   return out;
-}
-
-size_t card_image_count() {
-  return card_image_store::CardImageStore::instance().list().size();
-}
-
-std::string next_card_image_id() {
-  uint32_t now = esphome::millis();
-  for (int i = 0; i < 100; i++) {
-    std::string id = "img-" + std::to_string(now) + "-" + std::to_string(i);
-    if (find_card_image_offset(id) < 0) return id;
-  }
-  return "";
 }
 
 bool handle_card_image_get(AsyncWebServerRequest *request) {
@@ -474,38 +281,6 @@ bool handle_card_image_delete(AsyncWebServerRequest *request) {
     return true;
   }
   request->send(200, "application/json", "{\"ok\":true}");
-  return true;
-}
-
-bool handle_card_image_rename(AsyncWebServerRequest *request) {
-  if (request->method() != HTTP_POST) return false;
-  char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
-  std::string url(request->url_to(url_buf));
-  static constexpr const char *prefix = "/api/card-images/";
-  static constexpr const char *suffix = "/rename";
-  if (url.rfind(prefix, 0) != 0 || url.size() <= strlen(prefix) + strlen(suffix) ||
-      url.compare(url.size() - strlen(suffix), strlen(suffix), suffix) != 0) {
-    return false;
-  }
-  std::string id = url.substr(strlen(prefix), url.size() - strlen(prefix) - strlen(suffix));
-  if (!card_image_id_valid(id)) {
-    request->send(404, "text/plain", "Not found");
-    return true;
-  }
-  std::string name = normalize_card_image_name(request->arg("name"));
-  card_image_store::CardImageInfo image;
-  esp_err_t err = card_image_store::CardImageStore::instance().rename(id, name, image);
-  if (err == ESP_ERR_NOT_FOUND) {
-    request->send(404, "text/plain", "Not found");
-    return true;
-  }
-  if (err != ESP_OK) {
-    ESP_LOGE(TAG, "Failed to update card image name: %s", esp_err_to_name(err));
-    request->send(500, "text/plain", "Rename failed");
-    return true;
-  }
-  std::string body = card_image_item_json(image);
-  request->send(200, "application/json", body.c_str());
   return true;
 }
 
@@ -847,7 +622,7 @@ esp_err_t AsyncWebServer::request_handler_(AsyncWebServerRequest *request) const
     if (!this->authenticate_shortcut_request_(request)) return ESP_OK;
 #endif
   }
-  if (handle_card_image_get(request) || handle_card_image_delete(request) || handle_card_image_rename(request)) {
+  if (handle_card_image_get(request) || handle_card_image_delete(request)) {
     return ESP_OK;
   }
   if (handle_firmware_version_request(request)) {

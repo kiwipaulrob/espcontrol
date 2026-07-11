@@ -104,6 +104,7 @@ function routeContentType(url) {
 
 async function installRoutes(context, slug) {
   const scriptPath = path.join(WEB_OUTPUT_DIR, slug, "www.js");
+  const deviceSlots = readManifest().devices[slug].slots;
   assert(
     fs.existsSync(scriptPath),
     `${slug}: generated web UI does not exist at ${scriptPath}`,
@@ -144,7 +145,8 @@ async function installRoutes(context, slug) {
         body: JSON.stringify({
           available: true,
           requires_usb_flash: false,
-          format_version: 1,
+          format_version: 2,
+          max_active_backgrounds: deviceSlots,
           storage_bytes: 2 * 1024 * 1024,
           used_bytes: 0,
           free_bytes: 2 * 1024 * 1024,

@@ -27,6 +27,7 @@
   "firmware_update_post_api",
   "public_firmware_install",
   "config_option_core",
+  "card_image_service",
   "config_media_options",
   "config_image_options",
   "config_modal_tab_options",

@@ -1,4 +1,5 @@
 // ── Settings helpers ───────────────────────────────────────────────────
+// @web-module-requires: card_image_service
 
 function makeCollapsibleCard(title, bodyElement, defaultCollapsed, badgeElement, actionElement) {
   var card = document.createElement("div");
