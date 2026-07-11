@@ -14,6 +14,9 @@
 #include <cstring>
 
 #include "artwork_image.h"
+#if defined(USE_ESP_IDF) && defined(CONFIG_IDF_TARGET_ESP32P4)
+#include "driver/jpeg_decode.h"
+#endif
 static const char *const TAG = "artwork_image.jpeg";
 
 namespace esphome {
@@ -28,6 +31,29 @@ static void jpeg_error_exit(j_common_ptr cinfo) {
 static constexpr size_t MAX_JPEG_DOWNLOAD_SIZE = 2 * 1024 * 1024;  // 2 MB
 static constexpr uint32_t JPEG_DECODE_BUDGET_MS = 12;
 static constexpr int JPEG_SCANLINE_BATCH = 8;
+
+#if defined(USE_ESP_IDF) && defined(CONFIG_IDF_TARGET_ESP32P4)
+static jpeg_decoder_handle_t p4_jpeg_decoder() {
+  static jpeg_decoder_handle_t decoder = nullptr;
+  static bool initialization_attempted = false;
+  if (!initialization_attempted) {
+    initialization_attempted = true;
+    jpeg_decode_engine_cfg_t config{};
+    config.intr_priority = 0;
+    config.timeout_ms = 100;
+    esp_err_t err = jpeg_new_decoder_engine(&config, &decoder);
+    if (err != ESP_OK) {
+      ESP_LOGW(TAG, "Could not initialize ESP32-P4 JPEG hardware (error %d); using software decoder", err);
+      decoder = nullptr;
+    }
+  }
+  return decoder;
+}
+
+static uint32_t align_up(uint32_t value, uint32_t alignment) {
+  return (value + alignment - 1) / alignment * alignment;
+}
+#endif
 
 JpegDecoder::~JpegDecoder() { this->cleanup_(); }
 
@@ -55,6 +81,13 @@ int HOT JpegDecoder::decode(uint8_t *buffer, size_t size) {
     ESP_LOGV(TAG, "Download not complete. Size: %zu/%zu", size, this->download_size_);
     return 0;
   }
+#if defined(USE_ESP_IDF) && defined(CONFIG_IDF_TARGET_ESP32P4)
+  if (!this->decode_started_) {
+    int hardware_result = this->decode_hardware_(buffer, size);
+    if (hardware_result != 0) return hardware_result;
+    ESP_LOGD(TAG, "Using software JPEG fallback on ESP32-P4");
+  }
+#endif
   if (!this->decode_started_) {
     int ret = this->start_decode_(buffer, size);
     if (ret < 0) {
@@ -63,6 +96,78 @@ int HOT JpegDecoder::decode(uint8_t *buffer, size_t size) {
   }
   return this->decode_scanlines_();
 }
+
+#if defined(USE_ESP_IDF) && defined(CONFIG_IDF_TARGET_ESP32P4)
+int JpegDecoder::decode_hardware_(uint8_t *buffer, size_t size) {
+  jpeg_decoder_handle_t decoder = p4_jpeg_decoder();
+  if (decoder == nullptr) return 0;
+
+  jpeg_decode_picture_info_t info{};
+  if (jpeg_decoder_get_info(buffer, size, &info) != ESP_OK || info.width == 0 || info.height == 0 ||
+      info.sample_method == JPEG_DOWN_SAMPLING_GRAY) {
+    return 0;
+  }
+
+  uint32_t mcu_width = info.sample_method == JPEG_DOWN_SAMPLING_YUV444 ? 8 : 16;
+  uint32_t mcu_height = info.sample_method == JPEG_DOWN_SAMPLING_YUV420 ? 16 : 8;
+  uint32_t padded_width = align_up(info.width, mcu_width);
+  uint32_t padded_height = align_up(info.height, mcu_height);
+  size_t requested_output_size = static_cast<size_t>(padded_width) * padded_height * 2;
+
+  jpeg_decode_memory_alloc_cfg_t input_config{};
+  input_config.buffer_direction = JPEG_DEC_ALLOC_INPUT_BUFFER;
+  size_t input_capacity = 0;
+  auto *hardware_input = static_cast<uint8_t *>(jpeg_alloc_decoder_mem(size, &input_config, &input_capacity));
+  if (hardware_input == nullptr || input_capacity < size) {
+    free(hardware_input);
+    return 0;
+  }
+  memcpy(hardware_input, buffer, size);
+
+  jpeg_decode_memory_alloc_cfg_t output_config{};
+  output_config.buffer_direction = JPEG_DEC_ALLOC_OUTPUT_BUFFER;
+  size_t output_capacity = 0;
+  auto *hardware_output = static_cast<uint8_t *>(
+      jpeg_alloc_decoder_mem(requested_output_size, &output_config, &output_capacity));
+  if (hardware_output == nullptr || output_capacity < requested_output_size) {
+    free(hardware_input);
+    free(hardware_output);
+    return 0;
+  }
+
+  jpeg_decode_cfg_t decode_config{};
+  decode_config.output_format = JPEG_DECODE_OUT_FORMAT_RGB565;
+  decode_config.rgb_order = this->image_->is_big_endian() ? JPEG_DEC_RGB_ELEMENT_ORDER_RGB
+                                                           : JPEG_DEC_RGB_ELEMENT_ORDER_BGR;
+  decode_config.conv_std = JPEG_YUV_RGB_CONV_STD_BT601;
+
+  uint32_t output_size = 0;
+  uint32_t started_at = millis();
+  esp_err_t err = jpeg_decoder_process(decoder, &decode_config, hardware_input, size,
+                                       hardware_output, output_capacity, &output_size);
+  free(hardware_input);
+  if (err != ESP_OK || output_size < requested_output_size) {
+    ESP_LOGW(TAG, "ESP32-P4 JPEG hardware rejected image (error %d); using software decoder", err);
+    free(hardware_output);
+    return 0;
+  }
+
+  if (!this->set_size(info.width, info.height)) {
+    free(hardware_output);
+    return DECODE_ERROR_OUT_OF_MEMORY;
+  }
+  for (uint32_t y = 0; y < info.height; y++) {
+    this->draw_rgb565_block(0, y, info.width, 1,
+                            hardware_output + static_cast<size_t>(y) * padded_width * 2);
+  }
+  free(hardware_output);
+
+  this->decoded_bytes_ = size;
+  ESP_LOGI(TAG, "ESP32-P4 hardware JPEG decoded %ux%u in %lu ms", info.width, info.height,
+           static_cast<unsigned long>(millis() - started_at));
+  return static_cast<int>(size);
+}
+#endif
 
 int JpegDecoder::start_decode_(uint8_t *buffer, size_t size) {
   ESP_LOGD(TAG, "JPEG decode start: %zu bytes", size);
