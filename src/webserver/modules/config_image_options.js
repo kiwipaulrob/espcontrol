@@ -44,6 +44,15 @@ function imageCardLimit() {
   return IMAGE_CARD_LIMIT;
 }
 
+function cardBackgroundImageLimit() {
+  return CARD_BACKGROUND_IMAGE_LIMIT;
+}
+
+function cardBackgroundImageLimitMessage() {
+  return "You can save background images on up to " + CARD_BACKGROUND_IMAGE_LIMIT +
+    " cards on each page.";
+}
+
 function imageCardLimitMessage() {
   if (IMAGE_CARD_LIMIT <= 0) return "Image cards are not available on this display.";
   return "Image cards use shared firmware download slots. You can save up to " +
@@ -130,6 +139,28 @@ function imageCardCountWithCandidate(candidate) {
   return count;
 }
 
+function cardBackgroundImageCountWithCandidate(candidate) {
+  var buttons = state.buttons;
+  var grid = state.grid;
+  if (candidate && candidate.isSub) {
+    var subpage = state.subpages && state.subpages[candidate.homeSlot];
+    buttons = subpage && subpage.buttons || [];
+    grid = subpage && subpage.grid || [];
+  }
+  var count = 0;
+  var matchedCandidate = false;
+  activeGridSlots(grid).forEach(function (slot) {
+    var button = buttons && buttons[slot - 1];
+    if (candidate && candidate.slot === slot) {
+      button = candidate.button;
+      matchedCandidate = true;
+    }
+    if (cardBackgroundImage(button && button.options)) count++;
+  });
+  if (candidate && !matchedCandidate && cardBackgroundImage(candidate.button && candidate.button.options)) count++;
+  return count;
+}
+
 function canAddImageCards(extraCount) {
   extraCount = parseInt(extraCount || 0, 10);
   if (!isFinite(extraCount) || extraCount <= 0) return true;
@@ -138,6 +169,10 @@ function canAddImageCards(extraCount) {
 
 function showImageCardLimitBanner() {
   showBanner(imageCardLimitMessage(), "error");
+}
+
+function showCardBackgroundImageLimitBanner() {
+  showBanner(cardBackgroundImageLimitMessage(), "error");
 }
 
 function imageModalMode(b) {

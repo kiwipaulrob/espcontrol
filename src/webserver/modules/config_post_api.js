@@ -19,6 +19,7 @@ function clearCardImageReferences(id) {
     });
   }
   clearButtons(state.buttons, function (index) { saveButtonConfig(index + 1); });
+  clearButtons(state.settingsDraft && [state.settingsDraft.button]);
   Object.keys(state.subpages || {}).forEach(function (key) {
     var subpage = state.subpages[key];
     var before = changed;

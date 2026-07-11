@@ -2273,6 +2273,31 @@ assert.strictEqual(hooks.imageCardCandidateAllowedForTest(imageLimitSnapshot, {
   slot: 2,
   button: switchCardForImageLimit,
 }), true, "replacing an existing image card frees a firmware slot");
+const backgroundCardForLimit = Object.assign({}, switchCardForImageLimit, { options: "bg_image=test-image" });
+const backgroundLimitSnapshot = {
+  grid: [1, 2, 3, 4, 5, 6, 7, 8, 9],
+  buttons: Array.from({ length: 9 }, () => backgroundCardForLimit),
+  subpages: {
+    1: {
+      grid: [1, 2],
+      buttons: [backgroundCardForLimit, switchCardForImageLimit],
+    },
+  },
+};
+assert.strictEqual(hooks.cardBackgroundImageLimit(), 9, "background card editor limit matches firmware downloader slots");
+assert.strictEqual(hooks.cardBackgroundImageCountForTest(backgroundLimitSnapshot), 9,
+  "background card count applies to the active page");
+assert.strictEqual(hooks.cardBackgroundImageCountForTest(backgroundLimitSnapshot, {
+  isSub: false,
+  slot: 10,
+  button: backgroundCardForLimit,
+}), 10, "saving a tenth background card on the main page is detected");
+assert.strictEqual(hooks.cardBackgroundImageCountForTest(backgroundLimitSnapshot, {
+  isSub: true,
+  homeSlot: 1,
+  slot: 2,
+  button: backgroundCardForLimit,
+}), 2, "background limits are counted independently for each subpage");
 assertButtonRoundTrip(hooks, "image card default options", {
   entity: "camera.front_door",
   label: "",

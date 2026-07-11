@@ -115,6 +115,22 @@ if (typeof globalThis !== "undefined" && globalThis.__ESPCONTROL_TEST_HOOKS__) {
     imageRefreshInterval: imageRefreshInterval,
     imageRefreshMode: imageRefreshMode,
     imageCardLimit: imageCardLimit,
+    cardBackgroundImageLimit: cardBackgroundImageLimit,
+    cardBackgroundImageCountForTest: function (snapshot, candidate) {
+      var oldGrid = state.grid;
+      var oldButtons = state.buttons;
+      var oldSubpages = state.subpages;
+      state.grid = (snapshot && snapshot.grid) || [];
+      state.buttons = (snapshot && snapshot.buttons) || [];
+      state.subpages = (snapshot && snapshot.subpages) || {};
+      try {
+        return cardBackgroundImageCountWithCandidate(candidate);
+      } finally {
+        state.grid = oldGrid;
+        state.buttons = oldButtons;
+        state.subpages = oldSubpages;
+      }
+    },
     imageCardCountForTest: function (snapshot, candidate) {
       var oldGrid = state.grid;
       var oldButtons = state.buttons;

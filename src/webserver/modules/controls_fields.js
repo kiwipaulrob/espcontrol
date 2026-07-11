@@ -517,7 +517,7 @@ function renderCardBackgroundControl(panel, b, helpers) {
     uploadBtn.disabled = !available;
     availability.textContent = info.requiresUsbFlash
       ? "Background images need one USB reflash to install image storage on this display."
-      : "";
+      : cardBackgroundImageLimitMessage();
     select.innerHTML = "";
     var none = document.createElement("option");
     none.value = "";
