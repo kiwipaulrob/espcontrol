@@ -764,6 +764,12 @@ inline void grid_refresh_layout(
 
   if (main_page_obj) lv_obj_update_layout(main_page_obj);
 
+  for (int i = 0; i < NS; i++) {
+    if (lv_obj_has_flag(slots[i].btn, LV_OBJ_FLAG_HIDDEN)) {
+      clear_card_background_image(slots[i]);
+    }
+  }
+
   for (int pos = 0; pos < NS; pos++) {
     int idx = order.positions[pos];
     if (idx < 1 || idx > NS) continue;

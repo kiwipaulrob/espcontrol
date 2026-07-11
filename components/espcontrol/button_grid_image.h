@@ -802,7 +802,9 @@ inline void card_background_move_content_foreground(const BtnSlot &s) {
     lv_obj_move_foreground(shadow);
   };
 
-  sync_shadow(s.icon_lbl, s.btn, 1, 1);
+  // State-driven cards replace their icon glyph directly, bypassing the label
+  // text hook. Avoid a second icon label that could retain the old glyph.
+  image_card_delete_label_shadow(s.icon_lbl, s.btn);
   sync_shadow(s.text_lbl, s.btn, 1, 1);
   sync_shadow(s.subpage_lbl, s.btn, 1, 1);
   if (s.sensor_container) lv_obj_move_foreground(s.sensor_container);
@@ -1392,6 +1394,35 @@ inline void sync_card_background_image(BtnSlot &s, const ParsedCfg &p,
   }
 
   if (!desired_id.empty()) apply_card_background_image(s, p, cfg);
+}
+
+inline void clear_card_background_image(BtnSlot &s) {
+  if (!s.btn) return;
+  lv_obj_t *existing_widget = nullptr;
+  for (const auto &ref : card_background_widget_refs()) {
+    if (ref.btn == s.btn) {
+      existing_widget = ref.widget;
+      break;
+    }
+  }
+  if (!existing_widget) return;
+
+  CardBackgroundImageCtx *contexts = card_background_image_contexts();
+  for (int i = 0; i < CARD_BACKGROUND_IMAGE_MAX_CONTEXTS; i++) {
+    for (auto &binding : contexts[i].bindings) {
+      if (!binding.active || binding.widget != existing_widget) continue;
+      binding.active = false;
+      binding.btn = nullptr;
+      binding.widget = nullptr;
+    }
+    card_background_deactivate_if_unused(&contexts[i]);
+  }
+  card_background_unregister_widget(existing_widget);
+  image_card_clear_widget_source(existing_widget);
+  lv_obj_del(existing_widget);
+  image_card_delete_label_shadow(s.icon_lbl, s.btn);
+  image_card_delete_label_shadow(s.text_lbl, s.btn);
+  image_card_delete_label_shadow(s.subpage_lbl, s.btn);
 }
 
 inline void image_card_apply_widget_geometry(lv_obj_t *btn, lv_obj_t *widget,

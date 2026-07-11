@@ -1,5 +1,5 @@
 // ── Card image service ────────────────────────────────────────────────
-// @web-module-requires: config_option_core
+// @web-module-requires: state, config_option_core
 
 var _cardImageLibrary = [];
 var _cardImageLibraryInfo = {
@@ -41,6 +41,23 @@ function listCardImages(force) {
 
 function cardImageLibraryInfo() {
   return Object.assign({}, _cardImageLibraryInfo);
+}
+
+function countCardImageUsage(id) {
+  id = normalizeCardBackgroundImageId(id);
+  if (!id) return 0;
+  var count = 0;
+  function countButtons(buttons) {
+    (buttons || []).forEach(function (button) {
+      if (cardBackgroundImage(button && button.options) === id) count++;
+    });
+  }
+  countButtons(state.buttons);
+  Object.keys(state.subpages || {}).forEach(function (key) {
+    var subpage = state.subpages[key];
+    countButtons(subpage && subpage.buttons);
+  });
+  return count;
 }
 
 function resizeCardImageFile(file) {

@@ -563,6 +563,11 @@ function renderCardBackgroundControl(panel, b, helpers) {
   deleteBtn.addEventListener("click", function () {
     var id = selectedImage();
     if (!id) return;
+    var used = countCardImageUsage(id);
+    if (used && !window.confirm("This image is used by " + used + " card" +
+        (used === 1 ? "" : "s") + ". Delete it anyway?")) {
+      return;
+    }
     deleteCardImage(id).then(function () {
       clearCardImageReferences(id);
       setBackground("");

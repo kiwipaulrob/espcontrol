@@ -1,23 +1,6 @@
 // ── Settings Page ──────────────────────────────────────────────────────
 // @web-module-requires: state, language_state, environment_state, screen_rotation_state, screen_schedule_state, screen_schedule_post_api, ntp_state, appearance_state, idle_state, artwork_state, artwork_post_api, screensaver_state, firmware_version_state, clock_bar_state, clock_bar_post_api, entity_state, firmware_update_state, screensaver_timeout, c6_firmware_ui, api, public_firmware_install, state_loader_api, config_option_core, card_image_service, controls, controls_shell
 
-function countCardImageUsage(id) {
-  id = normalizeCardBackgroundImageId(id);
-  if (!id) return 0;
-  var count = 0;
-  function countButtons(buttons) {
-    (buttons || []).forEach(function (button) {
-      if (cardBackgroundImage(button && button.options) === id) count++;
-    });
-  }
-  countButtons(state.buttons);
-  Object.keys(state.subpages || {}).forEach(function (key) {
-    var subpage = state.subpages[key];
-    countButtons(subpage && subpage.buttons);
-  });
-  return count;
-}
-
 function formatCardImageSize(size) {
   size = parseInt(size, 10);
   if (!isFinite(size) || size <= 0) return "";
