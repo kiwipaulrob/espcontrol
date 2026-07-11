@@ -244,6 +244,7 @@ class ArtworkImage : public PollingComponent,
    */
   bool is_big_endian_;
   bool allow_insecure_local_urls_;
+  bool direct_container_stream_{false};
   /**
    * Actual width of the current image. If fixed_width_ is specified,
    * this will be equal to it; otherwise it will be set once the decoding

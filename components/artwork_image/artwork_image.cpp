@@ -25,6 +25,7 @@ static const char *const CONTENT_TYPE_HEADER_NAME = "content-type";
 static constexpr uint32_t RETIRED_BUFFER_GRACE_MS = 300;
 static constexpr size_t MAX_RETIRED_IMAGE_BUFFERS = 1;
 static constexpr size_t MAX_DOWNLOAD_BUFFER_SIZE = 2 * 1024 * 1024;
+static constexpr size_t DIRECT_CONTAINER_READ_CHUNK_SIZE = 64 * 1024;
 static constexpr int LOCAL_ARTWORK_HTTP_TIMEOUT_MS = 6500;
 
 #include "image_decoder.h"
@@ -273,6 +274,7 @@ bool ArtworkImage::request_update_container(std::shared_ptr<http_request::HttpCo
   this->last_http_status_ = 0;
   this->last_error_was_ha_media_proxy_ = false;
   this->url_ = source_key;
+  this->direct_container_stream_ = true;
   this->downloader_ = std::move(container);
   this->log_state_("local-stream-start");
   this->start_download_();
@@ -295,6 +297,7 @@ void ArtworkImage::update() {
   }
   this->last_http_status_ = 0;
   this->last_error_was_ha_media_proxy_ = false;
+  this->direct_container_stream_ = false;
   ESP_LOGI(TAG, "Updating image %s", sanitize_artwork_url_for_log(this->url_).c_str());
   ESP_LOGD(TAG, "Artwork URL source: %s", classify_artwork_url_for_log(this->url_));
   this->log_state_("request-start");
@@ -544,7 +547,10 @@ void ArtworkImage::loop() {
       return;
     }
 
-    size_t available = std::min(this->download_buffer_.free_capacity(), this->download_buffer_initial_size_);
+    size_t read_chunk_size = this->direct_container_stream_
+                                 ? DIRECT_CONTAINER_READ_CHUNK_SIZE
+                                 : this->download_buffer_initial_size_;
+    size_t available = std::min(this->download_buffer_.free_capacity(), read_chunk_size);
     auto len = this->downloader_->read(this->download_buffer_.append(), available);
     bool transfer_complete = false;
     if (len > 0) {
@@ -626,7 +632,10 @@ void ArtworkImage::loop() {
     return;
   }
 
-  size_t available = std::min(this->download_buffer_.free_capacity(), this->download_buffer_initial_size_);
+  size_t read_chunk_size = this->direct_container_stream_
+                               ? DIRECT_CONTAINER_READ_CHUNK_SIZE
+                               : this->download_buffer_initial_size_;
+  size_t available = std::min(this->download_buffer_.free_capacity(), read_chunk_size);
   auto len = this->downloader_->read(this->download_buffer_.append(), available);
   if (len > 0) {
     this->download_buffer_.write(len);
@@ -1160,6 +1169,7 @@ void ArtworkImage::end_connection_() {
   this->discard_decode_buffer_();
   this->download_buffer_.reset();
   this->download_buffer_.shrink_to(this->download_buffer_initial_size_);
+  this->direct_container_stream_ = false;
 }
 
 bool ArtworkImage::validate_url_(const std::string &url) {
