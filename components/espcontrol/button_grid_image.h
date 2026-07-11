@@ -94,6 +94,7 @@ struct CardBackgroundImageCtx {
   bool active = false;
   bool callbacks_bound = false;
   bool requested_once = false;
+  bool failed = false;
   bool download_active = false;
   bool download_queued = false;
   uint8_t retry_count = 0;
@@ -833,6 +834,7 @@ inline CardBackgroundImageCtx *&card_background_active_download_context() {
 }
 
 inline void card_background_release_download_slot(CardBackgroundImageCtx *ctx);
+inline void card_background_reveal_page_if_ready();
 
 inline void card_background_request_download(CardBackgroundImageCtx *ctx) {
   if (!ctx || !ctx->active || !ctx->image || ctx->url.empty()) return;
@@ -883,6 +885,7 @@ inline void card_background_apply_downloaded(CardBackgroundImageCtx *ctx) {
   }
   card_background_release_download_slot(ctx);
   ctx->requested_once = true;
+  ctx->failed = false;
   ctx->retry_count = 0;
   ctx->retry_deadline_ms = 0;
   ESP_LOGI("card_background", "Applied card background image: %s", ctx->id.c_str());
@@ -897,25 +900,45 @@ inline void card_background_apply_downloaded(CardBackgroundImageCtx *ctx) {
   // screen for every decoded image causes visible tearing on RGB displays.
   notify_dashboard_content_changed();
 
+  card_background_reveal_page_if_ready();
+}
+
+inline void card_background_reveal_page_if_ready() {
   lv_obj_t *page = card_background_active_page();
   if (!page || lv_scr_act() != page) return;
   int expected = 0;
-  int ready = 0;
+  int settled = 0;
   for (const auto &ref : card_background_widget_refs()) {
     if (!card_background_widget_on_page(ref.btn, page)) continue;
     expected++;
     for (int i = 0; i < CARD_BACKGROUND_IMAGE_MAX_CONTEXTS; i++) {
       CardBackgroundImageCtx *candidate = &card_background_image_contexts()[i];
-      if (!candidate->active || !candidate->requested_once) continue;
+      if (!candidate->active || (!candidate->requested_once && !candidate->failed)) continue;
       for (const auto &binding : candidate->bindings) {
         if (binding.active && binding.widget == ref.widget) {
-          ready++;
+          settled++;
           break;
         }
       }
     }
   }
-  if (expected == 0 || ready != expected) return;
+  if (expected == 0 || settled != expected) return;
+
+  for (const auto &ref : card_background_widget_refs()) {
+    if (!card_background_widget_on_page(ref.btn, page) || !ref.widget) continue;
+    bool ready = false;
+    for (int i = 0; i < CARD_BACKGROUND_IMAGE_MAX_CONTEXTS && !ready; i++) {
+      CardBackgroundImageCtx *candidate = &card_background_image_contexts()[i];
+      if (!candidate->active || !candidate->requested_once) continue;
+      for (const auto &binding : candidate->bindings) {
+        if (binding.active && binding.widget == ref.widget) {
+          ready = true;
+          break;
+        }
+      }
+    }
+    if (ready) lv_obj_clear_flag(ref.widget, LV_OBJ_FLAG_HIDDEN);
+  }
 
   lv_timer_t *&refresh_timer = card_background_final_refresh_timer();
   if (refresh_timer) lv_timer_del(refresh_timer);
@@ -938,6 +961,7 @@ inline void card_background_handle_download_error(CardBackgroundImageCtx *ctx) {
     ESP_LOGW("card_background", "Card background image download failed: %s; retry %u/%u scheduled",
              ctx->id.c_str(), ctx->retry_count, CARD_BACKGROUND_IMAGE_MAX_RETRIES);
   } else {
+    ctx->failed = true;
     ESP_LOGW("card_background", "Card background image download failed after %u retries: %s",
              CARD_BACKGROUND_IMAGE_MAX_RETRIES, ctx->id.c_str());
   }
@@ -945,6 +969,7 @@ inline void card_background_handle_download_error(CardBackgroundImageCtx *ctx) {
     if (!binding.active) continue;
     if (binding.widget) lv_obj_add_flag(binding.widget, LV_OBJ_FLAG_HIDDEN);
   }
+  card_background_reveal_page_if_ready();
 }
 
 inline void card_background_bind_callbacks(CardBackgroundImageCtx *ctx) {
@@ -999,6 +1024,7 @@ inline void card_background_release_contexts(const GridConfig &cfg) {
     contexts[i].target_width = 0;
     contexts[i].target_height = 0;
     contexts[i].requested_once = false;
+    contexts[i].failed = false;
     if (card_background_active_download_context() == &contexts[i]) {
       card_background_active_download_context() = nullptr;
     }
@@ -1049,6 +1075,7 @@ inline void card_background_deactivate_if_unused(CardBackgroundImageCtx *ctx) {
   ctx->target_width = 0;
   ctx->target_height = 0;
   ctx->requested_once = false;
+  ctx->failed = false;
   ctx->retry_count = 0;
   ctx->retry_deadline_ms = 0;
   if (ctx->image) ctx->image->release();
@@ -1151,6 +1178,7 @@ inline CardBackgroundImageCtx *acquire_card_background_image_context(const GridC
       contexts[i].active = true;
       contexts[i].id = id;
       contexts[i].url = card_background_image_url(id);
+      contexts[i].failed = false;
       card_background_configure_target_size(&contexts[i], target_width, target_height);
       card_background_bind_callbacks(&contexts[i]);
       return &contexts[i];
@@ -1298,6 +1326,7 @@ inline void card_background_activate_page(const GridConfig &cfg, lv_obj_t *page)
   }
   ESP_LOGD("card_background", "Activated page=%p refs=%d matched=%d active=%d",
            page, total_refs, matched_refs, activated_refs);
+  card_background_reveal_page_if_ready();
 }
 
 inline void apply_card_background_image(BtnSlot &s, const ParsedCfg &p,
@@ -1319,6 +1348,7 @@ inline void apply_card_background_image(BtnSlot &s, const ParsedCfg &p,
   lv_obj_set_style_pad_all(img, 0, LV_PART_MAIN);
   lv_obj_set_style_border_width(img, 0, LV_PART_MAIN);
   lv_obj_set_style_bg_opa(img, LV_OPA_TRANSP, LV_PART_MAIN);
+  lv_obj_add_flag(img, LV_OBJ_FLAG_HIDDEN);
   image_card_apply_tile_image_align(img);
   card_background_register_widget(s.btn, img, id);
 
