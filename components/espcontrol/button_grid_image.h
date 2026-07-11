@@ -842,7 +842,7 @@ inline void card_background_set_widget_source_hidden(
 }
 
 inline void card_background_release_download_slot(CardBackgroundImageCtx *ctx);
-inline void card_background_reveal_ready_widgets();
+inline bool card_background_reveal_ready_widgets();
 
 inline void card_background_request_download(CardBackgroundImageCtx *ctx) {
   if (!ctx || !ctx->active || !ctx->image || ctx->url.empty()) return;
@@ -891,7 +891,6 @@ inline void card_background_apply_downloaded(CardBackgroundImageCtx *ctx) {
     card_background_release_download_slot(ctx);
     return;
   }
-  card_background_release_download_slot(ctx);
   ctx->requested_once = true;
   ctx->failed = false;
   ctx->retry_count = 0;
@@ -904,16 +903,18 @@ inline void card_background_apply_downloaded(CardBackgroundImageCtx *ctx) {
     lv_obj_move_background(binding.widget);
     if (binding.btn) lv_obj_invalidate(binding.btn);
   }
-  // Invalidating the changed card is sufficient. Repainting the whole active
-  // screen for every decoded image causes visible tearing on RGB displays.
+  bool revealed = card_background_reveal_ready_widgets();
   notify_dashboard_content_changed();
-
-  card_background_reveal_ready_widgets();
+  // Finish the visible card refresh before releasing the serial decoder slot.
+  // Otherwise the next local image can decode before LVGL paints this one,
+  // making several completed cards appear together on the following refresh.
+  if (revealed) lv_refr_now(nullptr);
+  card_background_release_download_slot(ctx);
 }
 
-inline void card_background_reveal_ready_widgets() {
+inline bool card_background_reveal_ready_widgets() {
   lv_obj_t *page = card_background_active_page();
-  if (!page) return;
+  if (!page) return false;
   if (lv_scr_act() != page) {
     lv_timer_t *&refresh_timer = card_background_final_refresh_timer();
     if (!refresh_timer) {
@@ -923,7 +924,7 @@ inline void card_background_reveal_ready_widgets() {
         card_background_reveal_ready_widgets();
       }, 50, nullptr);
     }
-    return;
+    return false;
   }
 
   lv_timer_t *&refresh_timer = card_background_final_refresh_timer();
@@ -932,6 +933,7 @@ inline void card_background_reveal_ready_widgets() {
     refresh_timer = nullptr;
   }
 
+  bool revealed = false;
   for (const auto &ref : card_background_widget_refs()) {
     if (!card_background_widget_on_page(ref.btn, page) || !ref.widget) continue;
     bool ready = false;
@@ -948,8 +950,10 @@ inline void card_background_reveal_ready_widgets() {
     if (ready && lv_obj_has_flag(ref.widget, LV_OBJ_FLAG_HIDDEN)) {
       lv_obj_clear_flag(ref.widget, LV_OBJ_FLAG_HIDDEN);
       if (ref.btn) lv_obj_invalidate(ref.btn);
+      revealed = true;
     }
   }
+  return revealed;
 }
 
 inline void card_background_handle_download_error(CardBackgroundImageCtx *ctx) {
