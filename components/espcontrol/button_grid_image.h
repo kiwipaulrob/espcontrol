@@ -833,6 +833,14 @@ inline CardBackgroundImageCtx *&card_background_active_download_context() {
   return ctx;
 }
 
+inline void card_background_set_widget_source_hidden(
+    lv_obj_t *widget, esphome::artwork_image::ArtworkImage *image) {
+  image_card_set_widget_source(widget, image);
+  // The shared image helper reveals its widget. Card backgrounds must remain
+  // offscreen until every visible background on the page has settled.
+  if (widget) lv_obj_add_flag(widget, LV_OBJ_FLAG_HIDDEN);
+}
+
 inline void card_background_release_download_slot(CardBackgroundImageCtx *ctx);
 inline void card_background_reveal_page_if_ready();
 
@@ -892,7 +900,7 @@ inline void card_background_apply_downloaded(CardBackgroundImageCtx *ctx) {
   for (auto &binding : ctx->bindings) {
     if (!binding.active || !binding.widget) continue;
     card_background_position_widget(binding.btn, binding.widget);
-    image_card_set_widget_source(binding.widget, ctx->image);
+    card_background_set_widget_source_hidden(binding.widget, ctx->image);
     lv_obj_move_background(binding.widget);
     if (binding.btn) lv_obj_invalidate(binding.btn);
   }
@@ -1058,7 +1066,7 @@ inline void card_background_sync_binding_image(CardBackgroundImageCtx *ctx,
   if (ctx->target_width <= 0 || ctx->target_height <= 0) return;
   CardBackgroundImageCtx *active_download = card_background_active_download_context();
   if (ctx->requested_once && ctx->image->get_url() == ctx->url) {
-    image_card_set_widget_source(binding->widget, ctx->image);
+    card_background_set_widget_source_hidden(binding->widget, ctx->image);
   } else if (active_download && active_download != ctx) {
     ctx->download_queued = true;
   } else if (!ctx->download_active) {
