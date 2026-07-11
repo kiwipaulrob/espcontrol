@@ -15,9 +15,11 @@
 namespace esphome::card_image_store {
 
 static constexpr size_t CARD_IMAGE_MAX_BYTES = 64 * 1024;
+static constexpr size_t CARD_IMAGE_CACHE_MAX_BYTES = 2 * 1024 * 1024;
 static constexpr size_t CARD_IMAGE_NAME_MAX_LENGTH = 40;
 static constexpr size_t CARD_IMAGE_FLASH_SECTOR_SIZE = 4096;
 static constexpr uint32_t CARD_IMAGE_FORMAT_VERSION = 2;
+static constexpr size_t CARD_IMAGE_INDEX_SECTORS = 2;
 
 struct CardImageInfo {
   std::string id;
@@ -36,6 +38,16 @@ struct CardImageUpload {
   uint32_t crc32{0xFFFFFFFFu};
   uint8_t first_bytes[2]{0, 0};
   uint8_t last_bytes[2]{0, 0};
+};
+
+struct CardImageCacheInfo {
+  std::string id;
+  uint32_t source_crc32{0};
+  uint32_t data_crc32{0};
+  uint16_t width{0};
+  uint16_t height{0};
+  size_t size{0};
+  size_t offset{0};
 };
 
 class CardImageStore;
@@ -73,6 +85,13 @@ class CardImageStore {
   esp_err_t rename(const std::string &id, const std::string &name, CardImageInfo &out);
   esp_err_t erase(const std::string &id);
 
+  bool read_rgb565_cache(const std::string &id, uint32_t source_crc32,
+                         uint16_t width, uint16_t height, uint8_t *buffer,
+                         size_t size);
+  esp_err_t write_rgb565_cache(const std::string &id, uint32_t source_crc32,
+                               uint16_t width, uint16_t height,
+                               const uint8_t *buffer, size_t size);
+
   std::shared_ptr<http_request::HttpContainer> open(const std::string &id);
   int read_at(const CardImageInfo &info, size_t position, uint8_t *buffer, size_t size);
   void close_reader(const std::string &id);
@@ -93,7 +112,36 @@ class CardImageStore {
   };
   static_assert(sizeof(CardImageHeader) == 128, "Card image header must remain 128 bytes");
 
+  struct CardImageIndexHeader {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t generation;
+    uint32_t count;
+    uint32_t crc32;
+  };
+
+  struct CardImageCacheHeader {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t size;
+    uint32_t source_crc32;
+    uint32_t data_crc32;
+    uint16_t width;
+    uint16_t height;
+    char id[48];
+    uint8_t padding[56];
+  };
+  static_assert(sizeof(CardImageCacheHeader) == 128, "Card image cache header must remain 128 bytes");
+
   const esp_partition_t *partition_();
+  size_t data_capacity_();
+  size_t index_slot_offset_(size_t slot);
+  bool load_index_();
+  bool read_index_slot_(size_t slot, CardImageIndexHeader &header,
+                        std::vector<uint32_t> &offsets);
+  bool persist_index_();
+  bool index_region_available_() const;
+  void scan_legacy_index_();
   void ensure_index_();
   bool read_header_(size_t offset, CardImageHeader &header);
   bool header_valid_(const CardImageHeader &header, size_t offset) const;
@@ -101,13 +149,23 @@ class CardImageStore {
   int find_empty_offset_(size_t image_size);
   std::string next_id_();
   CardImageInfo info_from_header_(const CardImageHeader &header, size_t offset) const;
+  bool cache_header_valid_(const CardImageCacheHeader &header, size_t offset) const;
+  CardImageCacheInfo cache_info_from_header_(const CardImageCacheHeader &header,
+                                             size_t offset) const;
+  int find_cache_index_(const std::string &id, uint32_t source_crc32,
+                        uint16_t width, uint16_t height) const;
+  void erase_caches_for_id_(const std::string &id);
   int find_index_(const std::string &id) const;
   static uint32_t crc32_update_(uint32_t crc, const uint8_t *data, size_t size);
 
   const esp_partition_t *partition_cache_{nullptr};
   bool partition_attempted_{false};
   bool index_loaded_{false};
+  bool persistent_index_active_{false};
+  uint32_t index_generation_{0};
+  size_t active_index_slot_{0};
   std::vector<CardImageInfo> images_{};
+  std::vector<CardImageCacheInfo> caches_{};
   std::vector<std::pair<std::string, size_t>> readers_{};
 };
 

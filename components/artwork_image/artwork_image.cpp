@@ -176,6 +176,9 @@ size_t ArtworkImage::resize_(int width_in, int height_in) {
   int content_height = height;
   int offset_x = 0;
   int offset_y = 0;
+  bool frame_will_be_fully_overwritten =
+      this->type_ == ImageType::IMAGE_TYPE_RGB565 && !this->has_transparency() &&
+      this->resize_mode_ == ImageResizeMode::COVER && width_in > 0 && height_in > 0;
   if (this->is_auto_resize_()) {
     width = width_in;
     height = height_in;
@@ -212,7 +215,7 @@ size_t ArtworkImage::resize_(int width_in, int height_in) {
       this->decode_content_height_ = content_height;
       this->decode_offset_x_ = offset_x;
       this->decode_offset_y_ = offset_y;
-      memset(this->decode_buffer_, 0, new_size);
+      if (!frame_will_be_fully_overwritten) memset(this->decode_buffer_, 0, new_size);
       ESP_LOGI(TAG, "Artwork fit: source=%dx%d target=%dx%d content=%dx%d offset=%d,%d",
                width_in, height_in, width, height, content_width, content_height, offset_x, offset_y);
       return new_size;
@@ -240,7 +243,7 @@ size_t ArtworkImage::resize_(int width_in, int height_in) {
   this->decode_content_height_ = content_height;
   this->decode_offset_x_ = offset_x;
   this->decode_offset_y_ = offset_y;
-  memset(this->decode_buffer_, 0, new_size);
+  if (!frame_will_be_fully_overwritten) memset(this->decode_buffer_, 0, new_size);
   ESP_LOGI(TAG, "Artwork fit: source=%dx%d target=%dx%d content=%dx%d offset=%d,%d",
            width_in, height_in, width, height, content_width, content_height, offset_x, offset_y);
   return new_size;
@@ -278,6 +281,30 @@ bool ArtworkImage::request_update_container(std::shared_ptr<http_request::HttpCo
   this->downloader_ = std::move(container);
   this->log_state_("local-stream-start");
   this->start_download_();
+  return true;
+}
+
+bool ArtworkImage::request_update_rgb565_frame(
+    const std::string &source_key, int width, int height,
+    const std::function<bool(uint8_t *, size_t)> &loader) {
+  if (source_key.empty() || width <= 0 || height <= 0 || !loader || this->is_busy_() ||
+      this->type_ != ImageType::IMAGE_TYPE_RGB565) {
+    return false;
+  }
+  this->last_http_status_ = 0;
+  this->last_error_was_ha_media_proxy_ = false;
+  this->url_ = source_key;
+  size_t size = this->resize_(width, height);
+  if (size == 0 || this->decode_buffer_ == nullptr || !loader(this->decode_buffer_, size)) {
+    this->discard_decode_buffer_();
+    return false;
+  }
+  if (!this->promote_decode_buffer_()) {
+    this->discard_decode_buffer_();
+    return false;
+  }
+  ESP_LOGI(TAG, "Loaded cached RGB565 frame: %dx%d (%zu bytes)", width, height, size);
+  this->download_finished_callback_.call(true);
   return true;
 }
 

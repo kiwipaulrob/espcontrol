@@ -112,6 +112,20 @@ void ImageDecoder::draw_rgb565_frame(int width, int height, size_t stride_bytes,
   int start_y = std::max(0, this->y_offset_);
   int end_x = std::min(this->image_->decode_buffer_width_, this->x_offset_ + content_width);
   int end_y = std::min(this->image_->decode_buffer_height_, this->y_offset_ + content_height);
+  if (bpp_bytes == 2 && this->x_offset_ == 0 && this->y_offset_ == 0 &&
+      width == this->image_->decode_buffer_width_ && height == this->image_->decode_buffer_height_ &&
+      content_width == width && content_height == height) {
+    size_t row_bytes = static_cast<size_t>(width) * 2;
+    if (stride_bytes == row_bytes) {
+      memcpy(this->image_->decode_buffer_, data, row_bytes * height);
+    } else {
+      for (int y = 0; y < height; y++) {
+        memcpy(this->image_->decode_buffer_ + static_cast<size_t>(y) * row_bytes,
+               data + static_cast<size_t>(y) * stride_bytes, row_bytes);
+      }
+    }
+    return;
+  }
   std::vector<size_t> source_x_offsets(static_cast<size_t>(std::max(0, end_x - start_x)));
   for (int dst_x = start_x; dst_x < end_x; dst_x++) {
     int src_x = std::min(width - 1, (dst_x - this->x_offset_) * width / content_width);

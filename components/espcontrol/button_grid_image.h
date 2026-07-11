@@ -97,6 +97,8 @@ struct CardBackgroundImageCtx {
   bool failed = false;
   bool download_active = false;
   bool download_queued = false;
+  bool cache_write_pending = false;
+  uint32_t source_crc32 = 0;
   uint8_t retry_count = 0;
   uint32_t retry_deadline_ms = 0;
   struct Binding {
@@ -133,6 +135,16 @@ inline lv_obj_t *&card_background_active_page() {
 }
 
 inline lv_timer_t *&card_background_final_refresh_timer() {
+  static lv_timer_t *timer = nullptr;
+  return timer;
+}
+
+inline lv_timer_t *&card_background_cache_write_timer() {
+  static lv_timer_t *timer = nullptr;
+  return timer;
+}
+
+inline lv_timer_t *&card_background_next_download_timer() {
   static lv_timer_t *timer = nullptr;
   return timer;
 }
@@ -843,6 +855,8 @@ inline void card_background_set_widget_source_hidden(
 
 inline void card_background_release_download_slot(CardBackgroundImageCtx *ctx);
 inline bool card_background_reveal_ready_widgets();
+inline void card_background_schedule_cache_writes();
+inline void card_background_schedule_next_download(CardBackgroundImageCtx *finished_ctx);
 
 inline void card_background_request_download(CardBackgroundImageCtx *ctx) {
   if (!ctx || !ctx->active || !ctx->image || ctx->url.empty()) return;
@@ -856,7 +870,27 @@ inline void card_background_request_download(CardBackgroundImageCtx *ctx) {
   ctx->download_queued = false;
   card_background_active_download_context() = ctx;
   ESP_LOGI("card_background", "Decoding card background image: %s (%dx%d)", ctx->id.c_str(), width, height);
-  auto reader = esphome::card_image_store::CardImageStore::instance().open(ctx->id);
+  auto &store = esphome::card_image_store::CardImageStore::instance();
+  esphome::card_image_store::CardImageInfo info;
+  if (!store.find(ctx->id, info)) {
+    card_background_release_download_slot(ctx);
+    ctx->retry_deadline_ms = esphome::millis() + CARD_BACKGROUND_IMAGE_RETRY_DELAY_MS;
+    return;
+  }
+  ctx->source_crc32 = info.crc32;
+  size_t cached_size = static_cast<size_t>(width) * height * 2;
+  bool cache_started = ctx->image->request_update_rgb565_frame(
+      ctx->url, width, height, [&store, ctx, width, height](uint8_t *buffer, size_t size) {
+        return store.read_rgb565_cache(ctx->id, ctx->source_crc32,
+                                       static_cast<uint16_t>(width), static_cast<uint16_t>(height),
+                                       buffer, size);
+      });
+  if (cache_started) {
+    ESP_LOGI("card_background", "Loaded device-sized card background cache: %s (%zu bytes)",
+             ctx->id.c_str(), cached_size);
+    return;
+  }
+  auto reader = store.open(ctx->id);
   if (!reader || !ctx->image->request_update_container(reader, ctx->url)) {
     card_background_release_download_slot(ctx);
     ctx->retry_deadline_ms = esphome::millis() + CARD_BACKGROUND_IMAGE_RETRY_DELAY_MS;
@@ -864,14 +898,27 @@ inline void card_background_request_download(CardBackgroundImageCtx *ctx) {
   }
 }
 
-inline void card_background_start_next_queued_download(CardBackgroundImageCtx *finished_ctx) {
+inline bool card_background_start_next_queued_download(CardBackgroundImageCtx *finished_ctx) {
   CardBackgroundImageCtx *contexts = card_background_image_contexts();
   for (int i = 0; i < CARD_BACKGROUND_IMAGE_MAX_CONTEXTS; i++) {
     CardBackgroundImageCtx *next = &contexts[i];
     if (!next->active || !next->download_queued || next == finished_ctx) continue;
     card_background_request_download(next);
-    return;
+    return true;
   }
+  return false;
+}
+
+inline void card_background_schedule_next_download(CardBackgroundImageCtx *finished_ctx) {
+  lv_timer_t *&timer = card_background_next_download_timer();
+  if (timer) return;
+  timer = lv_timer_create([](lv_timer_t *next_timer) {
+    auto *finished = static_cast<CardBackgroundImageCtx *>(lv_timer_get_user_data(next_timer));
+    lv_timer_del(next_timer);
+    card_background_next_download_timer() = nullptr;
+    if (card_background_active_download_context() != nullptr) return;
+    if (!card_background_start_next_queued_download(finished)) card_background_schedule_cache_writes();
+  }, 40, finished_ctx);
 }
 
 inline void card_background_release_download_slot(CardBackgroundImageCtx *ctx) {
@@ -881,11 +928,11 @@ inline void card_background_release_download_slot(CardBackgroundImageCtx *ctx) {
   CardBackgroundImageCtx *&active = card_background_active_download_context();
   if (active == ctx) {
     active = nullptr;
-    card_background_start_next_queued_download(ctx);
+    card_background_schedule_next_download(ctx);
   }
 }
 
-inline void card_background_apply_downloaded(CardBackgroundImageCtx *ctx) {
+inline void card_background_apply_downloaded(CardBackgroundImageCtx *ctx, bool cached) {
   if (!ctx || !ctx->active || !ctx->image) return;
   if (ctx->image->get_url() != ctx->url) {
     card_background_release_download_slot(ctx);
@@ -895,6 +942,7 @@ inline void card_background_apply_downloaded(CardBackgroundImageCtx *ctx) {
   ctx->failed = false;
   ctx->retry_count = 0;
   ctx->retry_deadline_ms = 0;
+  ctx->cache_write_pending = !cached;
   ESP_LOGI("card_background", "Applied card background image: %s", ctx->id.c_str());
   for (auto &binding : ctx->bindings) {
     if (!binding.active || !binding.widget) continue;
@@ -905,11 +953,40 @@ inline void card_background_apply_downloaded(CardBackgroundImageCtx *ctx) {
   }
   bool revealed = card_background_reveal_ready_widgets();
   notify_dashboard_content_changed();
-  // Finish the visible card refresh before releasing the serial decoder slot.
-  // Otherwise the next local image can decode before LVGL paints this one,
-  // making several completed cards appear together on the following refresh.
-  if (revealed) lv_refr_now(nullptr);
+  // Release the decoder through a short asynchronous handoff. This gives LVGL
+  // a frame to paint the completed card without blocking on a forced refresh.
+  (void) revealed;
   card_background_release_download_slot(ctx);
+}
+
+inline void card_background_schedule_cache_writes() {
+  lv_timer_t *&timer = card_background_cache_write_timer();
+  if (timer) return;
+  timer = lv_timer_create([](lv_timer_t *cache_timer) {
+    CardBackgroundImageCtx *contexts = card_background_image_contexts();
+    for (int i = 0; i < CARD_BACKGROUND_IMAGE_MAX_CONTEXTS; i++) {
+      CardBackgroundImageCtx *ctx = &contexts[i];
+      if (!ctx->active || !ctx->cache_write_pending || !ctx->image ||
+          ctx->target_width <= 0 || ctx->target_height <= 0) {
+        continue;
+      }
+      ctx->cache_write_pending = false;
+      const uint8_t *data = ctx->image->get_buffer_data();
+      size_t size = ctx->image->get_active_buffer_size();
+      if (data != nullptr && size == static_cast<size_t>(ctx->target_width) * ctx->target_height * 2) {
+        auto err = esphome::card_image_store::CardImageStore::instance().write_rgb565_cache(
+            ctx->id, ctx->source_crc32, static_cast<uint16_t>(ctx->target_width),
+            static_cast<uint16_t>(ctx->target_height), data, size);
+        if (err != ESP_OK) {
+          ESP_LOGW("card_background", "Could not cache card background %s: %s",
+                   ctx->id.c_str(), esp_err_to_name(err));
+        }
+      }
+      return;
+    }
+    lv_timer_del(cache_timer);
+    card_background_cache_write_timer() = nullptr;
+  }, 75, nullptr);
 }
 
 inline bool card_background_reveal_ready_widgets() {
@@ -979,8 +1056,8 @@ inline void card_background_handle_download_error(CardBackgroundImageCtx *ctx) {
 inline void card_background_bind_callbacks(CardBackgroundImageCtx *ctx) {
   if (!ctx || !ctx->image || ctx->callbacks_bound) return;
   ctx->callbacks_bound = true;
-  ctx->image->add_on_finished_callback([ctx](bool) {
-    card_background_apply_downloaded(ctx);
+  ctx->image->add_on_finished_callback([ctx](bool cached) {
+    card_background_apply_downloaded(ctx, cached);
   });
   ctx->image->add_on_error_callback([ctx]() {
     card_background_handle_download_error(ctx);
@@ -1012,6 +1089,16 @@ inline void card_background_release_contexts(const GridConfig &cfg) {
     lv_timer_del(refresh_timer);
     refresh_timer = nullptr;
   }
+  lv_timer_t *&cache_timer = card_background_cache_write_timer();
+  if (cache_timer) {
+    lv_timer_del(cache_timer);
+    cache_timer = nullptr;
+  }
+  lv_timer_t *&next_timer = card_background_next_download_timer();
+  if (next_timer) {
+    lv_timer_del(next_timer);
+    next_timer = nullptr;
+  }
   CardBackgroundImageCtx *contexts = card_background_image_contexts();
   int count = cfg.card_background_image_count;
   if (count > CARD_BACKGROUND_IMAGE_MAX_CONTEXTS) count = CARD_BACKGROUND_IMAGE_MAX_CONTEXTS;
@@ -1034,6 +1121,8 @@ inline void card_background_release_contexts(const GridConfig &cfg) {
     }
     contexts[i].download_active = false;
     contexts[i].download_queued = false;
+    contexts[i].cache_write_pending = false;
+    contexts[i].source_crc32 = 0;
     contexts[i].retry_count = 0;
     contexts[i].retry_deadline_ms = 0;
     contexts[i].image = i < count && cfg.card_background_images ? cfg.card_background_images[i] : nullptr;
@@ -1080,6 +1169,8 @@ inline void card_background_deactivate_if_unused(CardBackgroundImageCtx *ctx) {
   ctx->target_height = 0;
   ctx->requested_once = false;
   ctx->failed = false;
+  ctx->cache_write_pending = false;
+  ctx->source_crc32 = 0;
   ctx->retry_count = 0;
   ctx->retry_deadline_ms = 0;
   if (ctx->image) ctx->image->release();

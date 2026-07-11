@@ -78,6 +78,9 @@ class ArtworkImage : public PollingComponent,
   /** Decode an already-open local stream without routing it through HTTP. */
   bool request_update_container(std::shared_ptr<http_request::HttpContainer> container,
                                 const std::string &source_key);
+  /** Load a device-native RGB565 frame directly into the display buffer. */
+  bool request_update_rgb565_frame(const std::string &source_key, int width, int height,
+                                   const std::function<bool(uint8_t *, size_t)> &loader);
   /** Stop any in-flight download/decode while keeping the last completed image buffer available. */
   void cancel_update();
   const std::string &get_url() const { return this->url_; }
@@ -92,6 +95,7 @@ class ArtworkImage : public PollingComponent,
     this->fixed_height_ = height;
   }
   void set_resize_mode(ImageResizeMode resize_mode) { this->resize_mode_ = resize_mode; }
+  ImageResizeMode get_resize_mode() const { return this->resize_mode_; }
 
   /** Add the request header */
   template<typename V> void add_request_header(const std::string &header, V value) {
@@ -136,6 +140,8 @@ class ArtworkImage : public PollingComponent,
   int get_content_offset_x() const { return this->buffer_offset_x_; }
   int get_content_offset_y() const { return this->buffer_offset_y_; }
   image::ImageType image_type() const { return this->type_; }
+  const uint8_t *get_buffer_data() const { return this->buffer_; }
+  size_t get_active_buffer_size() const { return this->get_buffer_size_(); }
 
  protected:
   bool validate_url_(const std::string &url);

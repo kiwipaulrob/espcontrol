@@ -55,6 +55,7 @@ class JpegDecoder : public ImageDecoder {
   bool decode_started_{false};
   bool use_rgb565_{false};
   bool big_endian_{false};
+  bool native_rgb565_output_{false};
 };
 
 }  // namespace artwork_image
