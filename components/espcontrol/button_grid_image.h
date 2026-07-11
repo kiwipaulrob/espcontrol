@@ -836,13 +836,13 @@ inline CardBackgroundImageCtx *&card_background_active_download_context() {
 inline void card_background_set_widget_source_hidden(
     lv_obj_t *widget, esphome::artwork_image::ArtworkImage *image) {
   image_card_set_widget_source(widget, image);
-  // The shared image helper reveals its widget. Card backgrounds must remain
-  // offscreen until every visible background on the page has settled.
+  // The shared image helper reveals its widget. Keep it hidden until its
+  // decoded image is ready and the page containing it is active.
   if (widget) lv_obj_add_flag(widget, LV_OBJ_FLAG_HIDDEN);
 }
 
 inline void card_background_release_download_slot(CardBackgroundImageCtx *ctx);
-inline void card_background_reveal_page_if_ready();
+inline void card_background_reveal_ready_widgets();
 
 inline void card_background_request_download(CardBackgroundImageCtx *ctx) {
   if (!ctx || !ctx->active || !ctx->image || ctx->url.empty()) return;
@@ -908,10 +908,10 @@ inline void card_background_apply_downloaded(CardBackgroundImageCtx *ctx) {
   // screen for every decoded image causes visible tearing on RGB displays.
   notify_dashboard_content_changed();
 
-  card_background_reveal_page_if_ready();
+  card_background_reveal_ready_widgets();
 }
 
-inline void card_background_reveal_page_if_ready() {
+inline void card_background_reveal_ready_widgets() {
   lv_obj_t *page = card_background_active_page();
   if (!page) return;
   if (lv_scr_act() != page) {
@@ -920,28 +920,17 @@ inline void card_background_reveal_page_if_ready() {
       refresh_timer = lv_timer_create([](lv_timer_t *timer) {
         lv_timer_del(timer);
         card_background_final_refresh_timer() = nullptr;
-        card_background_reveal_page_if_ready();
+        card_background_reveal_ready_widgets();
       }, 50, nullptr);
     }
     return;
   }
-  int expected = 0;
-  int settled = 0;
-  for (const auto &ref : card_background_widget_refs()) {
-    if (!card_background_widget_on_page(ref.btn, page)) continue;
-    expected++;
-    for (int i = 0; i < CARD_BACKGROUND_IMAGE_MAX_CONTEXTS; i++) {
-      CardBackgroundImageCtx *candidate = &card_background_image_contexts()[i];
-      if (!candidate->active || (!candidate->requested_once && !candidate->failed)) continue;
-      for (const auto &binding : candidate->bindings) {
-        if (binding.active && binding.widget == ref.widget) {
-          settled++;
-          break;
-        }
-      }
-    }
+
+  lv_timer_t *&refresh_timer = card_background_final_refresh_timer();
+  if (refresh_timer) {
+    lv_timer_del(refresh_timer);
+    refresh_timer = nullptr;
   }
-  if (expected == 0 || settled != expected) return;
 
   for (const auto &ref : card_background_widget_refs()) {
     if (!card_background_widget_on_page(ref.btn, page) || !ref.widget) continue;
@@ -956,19 +945,11 @@ inline void card_background_reveal_page_if_ready() {
         }
       }
     }
-    if (ready) lv_obj_clear_flag(ref.widget, LV_OBJ_FLAG_HIDDEN);
+    if (ready && lv_obj_has_flag(ref.widget, LV_OBJ_FLAG_HIDDEN)) {
+      lv_obj_clear_flag(ref.widget, LV_OBJ_FLAG_HIDDEN);
+      if (ref.btn) lv_obj_invalidate(ref.btn);
+    }
   }
-
-  lv_timer_t *&refresh_timer = card_background_final_refresh_timer();
-  if (refresh_timer) lv_timer_del(refresh_timer);
-  refresh_timer = lv_timer_create([](lv_timer_t *timer) {
-    lv_obj_t *refresh_page = static_cast<lv_obj_t *>(lv_timer_get_user_data(timer));
-    lv_timer_del(timer);
-    card_background_final_refresh_timer() = nullptr;
-    if (!refresh_page || lv_scr_act() != refresh_page) return;
-    lv_obj_invalidate(refresh_page);
-    lv_refr_now(nullptr);
-  }, 50, page);
 }
 
 inline void card_background_handle_download_error(CardBackgroundImageCtx *ctx) {
@@ -988,7 +969,7 @@ inline void card_background_handle_download_error(CardBackgroundImageCtx *ctx) {
     if (!binding.active) continue;
     if (binding.widget) lv_obj_add_flag(binding.widget, LV_OBJ_FLAG_HIDDEN);
   }
-  card_background_reveal_page_if_ready();
+  card_background_reveal_ready_widgets();
 }
 
 inline void card_background_bind_callbacks(CardBackgroundImageCtx *ctx) {
@@ -1345,7 +1326,7 @@ inline void card_background_activate_page(const GridConfig &cfg, lv_obj_t *page)
   }
   ESP_LOGD("card_background", "Activated page=%p refs=%d matched=%d active=%d",
            page, total_refs, matched_refs, activated_refs);
-  card_background_reveal_page_if_ready();
+  card_background_reveal_ready_widgets();
 }
 
 inline void apply_card_background_image(BtnSlot &s, const ParsedCfg &p,
