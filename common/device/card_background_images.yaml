@@ -92,3 +92,9 @@ artwork_image:
     resize_mode: COVER
     buffer_size: 8192
     allow_insecure_local_urls: true
+
+interval:
+  - interval: 250ms
+    then:
+      - lambda: |-
+          card_background_refresh_due();

@@ -1,9 +1,31 @@
 // ── Config Post API ───────────────────────────────────────────────────
-// @web-module-requires: state, entity_catalog, entity_state, model_generated, api, config_codec
+// @web-module-requires: state, entity_catalog, entity_state, model_generated, api, config_codec, config_option_core
 
 function saveButtonConfig(slot) {
   var b = state.buttons[slot - 1];
   postText(entityNameForSlot("button_config", slot), serializeButtonConfig(b));
+}
+
+function clearCardImageReferences(id) {
+  id = normalizeCardBackgroundImageId(id);
+  if (!id) return 0;
+  var changed = 0;
+  function clearButtons(buttons, save) {
+    (buttons || []).forEach(function (button, index) {
+      if (cardBackgroundImage(button && button.options) !== id) return;
+      button.options = setConfigOptionValue(button.options, CARD_BACKGROUND_IMAGE_OPTION, "");
+      changed++;
+      if (save) save(index);
+    });
+  }
+  clearButtons(state.buttons, function (index) { saveButtonConfig(index + 1); });
+  Object.keys(state.subpages || {}).forEach(function (key) {
+    var subpage = state.subpages[key];
+    var before = changed;
+    clearButtons(subpage && subpage.buttons);
+    if (changed !== before) saveSubpageEntity(key);
+  });
+  return changed;
 }
 
 function subpageEntityKeys() {

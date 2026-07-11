@@ -117,7 +117,14 @@ function copyLargeNumbersOption(out, options) {
 }
 
 var _cardImageLibrary = [];
-var _cardImageLibraryInfo = { storageBytes: 0, usedBytes: 0, freeBytes: 0, maxBytes: 0 };
+var _cardImageLibraryInfo = {
+  available: false,
+  requiresUsbFlash: false,
+  storageBytes: 0,
+  usedBytes: 0,
+  freeBytes: 0,
+  maxBytes: 0
+};
 var CARD_IMAGE_TARGET_SIZE = 200;
 var CARD_IMAGE_UPLOAD_MAX_BYTES = 45 * 1024;
 var CARD_IMAGE_MIN_QUALITY = 0.42;
@@ -161,6 +168,8 @@ function listCardImages(force) {
     .then(function (data) {
       _cardImageLibrary = data && data.images ? data.images : [];
       _cardImageLibraryInfo = {
+        available: !!(data && data.available),
+        requiresUsbFlash: !!(data && data.requires_usb_flash),
         storageBytes: parseInt(data && data.storage_bytes, 10) || 0,
         usedBytes: parseInt(data && data.used_bytes, 10) || 0,
         freeBytes: parseInt(data && data.free_bytes, 10) || 0,
@@ -261,7 +270,11 @@ function uploadCardImage(file) {
 function renameCardImage(id, name) {
   id = normalizeCardBackgroundImageId(id);
   if (!id) return Promise.reject(new Error("Could not rename image."));
-  return fetch("/api/card-images/" + id + "/rename?name=" + encodeURIComponent(String(name || "")))
+  return fetch("/api/card-images/" + id + "/rename", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: "name=" + encodeURIComponent(String(name || ""))
+  })
     .then(function (response) {
       if (!response.ok) {
         return response.text().then(function (message) {

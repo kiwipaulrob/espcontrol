@@ -264,6 +264,8 @@ class AsyncWebHandler {
   // NOLINTNEXTLINE(readability-identifier-naming)
   virtual bool isRequestHandlerTrivial() const { return true; }
 #ifdef USE_WEBSERVER_AUTH
+  // ESPHome's AuthMiddlewareHandler overrides this virtual hook, allowing
+  // shortcut routes to reuse the configured Basic credentials.
   virtual bool check_auth(AsyncWebServerRequest * /*request*/) { return true; }
 #endif
 };

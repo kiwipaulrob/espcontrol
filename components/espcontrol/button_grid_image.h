@@ -752,11 +752,25 @@ inline bool image_card_position_widget(lv_obj_t *btn, lv_obj_t *widget,
 }
 
 inline lv_obj_t *image_card_label_shadow(lv_obj_t *label, lv_obj_t *btn);
+inline void image_card_delete_label_shadow(lv_obj_t *label, lv_obj_t *btn);
 inline void image_card_parent_offset_from_button(lv_obj_t *obj, lv_obj_t *btn,
                                                  lv_coord_t &x, lv_coord_t &y,
                                                  lv_coord_t &height);
 
+inline void card_background_sync_label_shadow_text(lv_obj_t *label,
+                                                   const std::string &text) {
+  if (!label) return;
+  for (lv_obj_t *parent = lv_obj_get_parent(label); parent; parent = lv_obj_get_parent(parent)) {
+    lv_obj_t *shadow = image_card_label_shadow(label, parent);
+    if (!shadow) continue;
+    lv_label_set_long_mode(shadow, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(shadow, text.c_str());
+    return;
+  }
+}
+
 inline void card_background_move_content_foreground(const BtnSlot &s) {
+  button_label_text_sync_hook() = card_background_sync_label_shadow_text;
   auto sync_shadow = [](lv_obj_t *target, lv_obj_t *btn, lv_coord_t x_offset, lv_coord_t y_offset) {
     if (!target || !btn || lv_obj_has_flag(target, LV_OBJ_FLAG_HIDDEN)) return;
     lv_obj_update_layout(btn);
@@ -815,6 +829,8 @@ inline CardBackgroundImageCtx *&card_background_active_download_context() {
   return ctx;
 }
 
+inline void card_background_release_download_slot(CardBackgroundImageCtx *ctx);
+
 inline void card_background_request_download(CardBackgroundImageCtx *ctx) {
   if (!ctx || !ctx->active || !ctx->image || ctx->url.empty()) return;
   int width = ctx->image->get_fixed_width();
@@ -829,7 +845,12 @@ inline void card_background_request_download(CardBackgroundImageCtx *ctx) {
   ESP_LOGI("card_background", "Downloading card background image: %s (%dx%d)", ctx->id.c_str(), width, height);
   std::string effective_url = ctx->image->request_update_url(
     ctx->url, std::max(width, height));
-  if (!effective_url.empty()) ctx->url = effective_url;
+  if (effective_url.empty()) {
+    card_background_release_download_slot(ctx);
+    ctx->retry_deadline_ms = esphome::millis() + CARD_BACKGROUND_IMAGE_RETRY_DELAY_MS;
+    return;
+  }
+  ctx->url = effective_url;
 }
 
 inline void card_background_start_next_queued_download(CardBackgroundImageCtx *finished_ctx) {
@@ -855,7 +876,10 @@ inline void card_background_release_download_slot(CardBackgroundImageCtx *ctx) {
 
 inline void card_background_apply_downloaded(CardBackgroundImageCtx *ctx) {
   if (!ctx || !ctx->active || !ctx->image) return;
-  if (ctx->image->get_url() != ctx->url) return;
+  if (ctx->image->get_url() != ctx->url) {
+    card_background_release_download_slot(ctx);
+    return;
+  }
   card_background_release_download_slot(ctx);
   ctx->requested_once = true;
   ctx->retry_count = 0;
@@ -1171,6 +1195,15 @@ inline void card_background_register_widget(lv_obj_t *btn, lv_obj_t *widget,
   card_background_widget_refs().push_back({btn, widget, id});
 }
 
+inline void card_background_unregister_widget(lv_obj_t *widget) {
+  if (!widget) return;
+  auto &refs = card_background_widget_refs();
+  refs.erase(
+    std::remove_if(refs.begin(), refs.end(),
+                   [widget](const CardBackgroundWidgetRef &ref) { return ref.widget == widget; }),
+    refs.end());
+}
+
 inline bool card_background_widget_on_page(lv_obj_t *btn, lv_obj_t *page) {
   if (!btn || !page) return false;
   lv_obj_t *obj = btn;
@@ -1286,6 +1319,7 @@ inline void apply_card_background_image(BtnSlot &s, const ParsedCfg &p,
   CardBackgroundImageCtx::Binding *binding = card_background_add_binding(ctx, s.btn, img);
   if (!binding) {
     ESP_LOGW("card_background", "No card binding available for card background image %s", id.c_str());
+    card_background_unregister_widget(img);
     lv_obj_del(img);
     return;
   }
@@ -1295,6 +1329,50 @@ inline void apply_card_background_image(BtnSlot &s, const ParsedCfg &p,
   card_background_sync_binding_image(ctx, binding);
   lv_obj_move_background(img);
   card_background_move_content_foreground(s);
+}
+
+inline void sync_card_background_image(BtnSlot &s, const ParsedCfg &p,
+                                       const GridConfig &cfg) {
+  if (!s.btn) return;
+  std::string desired_id = card_background_supported_type(p.type)
+    ? cfg_option_value(p.options, CARD_BACKGROUND_IMAGE_OPTION) : "";
+  if (!card_background_image_id_valid(desired_id)) desired_id.clear();
+
+  lv_obj_t *existing_widget = nullptr;
+  std::string existing_id;
+  for (const auto &ref : card_background_widget_refs()) {
+    if (ref.btn == s.btn) {
+      existing_widget = ref.widget;
+      existing_id = ref.id;
+      break;
+    }
+  }
+  if (existing_widget && existing_id == desired_id) {
+    refresh_card_background_image(s.btn, cfg);
+    if (!desired_id.empty()) card_background_move_content_foreground(s);
+    return;
+  }
+
+  if (existing_widget) {
+    CardBackgroundImageCtx *contexts = card_background_image_contexts();
+    for (int i = 0; i < CARD_BACKGROUND_IMAGE_MAX_CONTEXTS; i++) {
+      for (auto &binding : contexts[i].bindings) {
+        if (!binding.active || binding.widget != existing_widget) continue;
+        binding.active = false;
+        binding.btn = nullptr;
+        binding.widget = nullptr;
+      }
+      card_background_deactivate_if_unused(&contexts[i]);
+    }
+    card_background_unregister_widget(existing_widget);
+    image_card_clear_widget_source(existing_widget);
+    lv_obj_del(existing_widget);
+    image_card_delete_label_shadow(s.icon_lbl, s.btn);
+    image_card_delete_label_shadow(s.text_lbl, s.btn);
+    image_card_delete_label_shadow(s.subpage_lbl, s.btn);
+  }
+
+  if (!desired_id.empty()) apply_card_background_image(s, p, cfg);
 }
 
 inline void image_card_apply_widget_geometry(lv_obj_t *btn, lv_obj_t *widget,
@@ -2304,7 +2382,6 @@ inline void refresh_image_cards() {
 }
 
 inline void image_card_refresh_due() {
-  card_background_refresh_due();
   ImageCardCtx *contexts = image_card_contexts();
   uint32_t now = esphome::millis();
   for (int i = 0; i < IMAGE_CARD_MAX_CONTEXTS; i++) {

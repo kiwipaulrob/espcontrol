@@ -341,7 +341,11 @@ std::string card_image_list_json() {
   size_t storage_bytes = partition ? partition->size : 0;
   size_t used_bytes = card_image_used_bytes();
   size_t free_bytes = storage_bytes > used_bytes ? storage_bytes - used_bytes : 0;
-  std::string out = "{\"storage_bytes\":";
+  std::string out = "{\"available\":";
+  out += partition ? "true" : "false";
+  out += ",\"requires_usb_flash\":";
+  out += partition ? "false" : "true";
+  out += ",\"storage_bytes\":";
   out += std::to_string(storage_bytes);
   out += ",\"used_bytes\":";
   out += std::to_string(used_bytes);
@@ -399,31 +403,6 @@ bool handle_card_image_get(AsyncWebServerRequest *request) {
     request->send(200, "application/json", body.c_str());
     return true;
   }
-  static constexpr const char *rename_prefix = "/api/card-images/";
-  static constexpr const char *rename_suffix = "/rename";
-  if (url.rfind(rename_prefix, 0) == 0 && url.size() > strlen(rename_prefix) + strlen(rename_suffix) &&
-      url.compare(url.size() - strlen(rename_suffix), strlen(rename_suffix), rename_suffix) == 0) {
-    std::string id = url.substr(strlen(rename_prefix), url.size() - strlen(rename_prefix) - strlen(rename_suffix));
-    if (!card_image_id_valid(id)) {
-      request->send(404, "text/plain", "Not found");
-      return true;
-    }
-    std::string name = normalize_card_image_name(request->arg("name"));
-    CardImageHeader header {};
-    esp_err_t err = update_card_image_name(id, name, header);
-    if (err == ESP_ERR_NOT_FOUND) {
-      request->send(404, "text/plain", "Not found");
-      return true;
-    }
-    if (err != ESP_OK) {
-      ESP_LOGE(TAG, "Failed to update card image name: %s", esp_err_to_name(err));
-      request->send(500, "text/plain", "Rename failed");
-      return true;
-    }
-    std::string body = card_image_item_json(header);
-    request->send(200, "application/json", body.c_str());
-    return true;
-  }
   if (url.rfind("/card-images/", 0) != 0) return false;
   std::string id = card_image_id_from_url(url, "/card-images/");
   if (id.empty()) {
@@ -444,7 +423,9 @@ bool handle_card_image_get(AsyncWebServerRequest *request) {
   httpd_req_t *req = *request;
   httpd_resp_set_status(req, HTTPD_200);
   httpd_resp_set_type(req, "image/jpeg");
-  httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=31536000");
+  // IDs are compact and can be reused after a reboot, so stale bytes must not
+  // survive deletion in a browser cache.
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
   std::unique_ptr<char[]> buffer(new char[1024]);
   size_t remaining = header.size;
   size_t offset = 0;
@@ -477,11 +458,26 @@ bool handle_card_image_delete(AsyncWebServerRequest *request) {
   }
   int image_offset = find_card_image_offset(id);
   const esp_partition_t *partition = card_image_partition();
+  if (partition == nullptr) {
+    request->send(503, "text/plain",
+                  "Card image storage is unavailable. Reflash this device over USB once to install it.");
+    return true;
+  }
+  if (image_offset < 0) {
+    request->send(404, "text/plain", "Not found");
+    return true;
+  }
   CardImageHeader header {};
-  if (image_offset >= 0 && partition != nullptr &&
-      read_card_image_header_at(static_cast<size_t>(image_offset), header)) {
-    esp_partition_erase_range(
-      partition, static_cast<size_t>(image_offset), card_image_record_size(header.size));
+  if (!read_card_image_header_at(static_cast<size_t>(image_offset), header)) {
+    request->send(404, "text/plain", "Not found");
+    return true;
+  }
+  esp_err_t err = esp_partition_erase_range(
+    partition, static_cast<size_t>(image_offset), card_image_record_size(header.size));
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to delete card image: %s", esp_err_to_name(err));
+    request->send(500, "text/plain", "Delete failed");
+    return true;
   }
   request->send(200, "application/json", "{\"ok\":true}");
   return true;
@@ -974,6 +970,7 @@ void AsyncWebServerRequest::init_response_(AsyncWebServerResponse *rsp, int code
     httpd_resp_set_type(*this, content_type);
   }
   httpd_resp_set_hdr(*this, "Accept-Ranges", "none");
+  apply_no_cache_headers(*this);
 
   for (const auto &header : DefaultHeaders::Instance().headers_) {
     httpd_resp_set_hdr(*this, header.name, header.value);

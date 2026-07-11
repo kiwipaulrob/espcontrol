@@ -1739,6 +1739,7 @@ var CARD_CONTRACT_OPTION_NAMES = {
   "actions": "actions",
   "active_color": "active_color",
   "alarm_card_type": "alarm_card_type",
+  "bg_image": "bg_image",
   "climate_tabs": "climate_tabs",
   "confirm_message": "confirm_message",
   "confirm_no": "confirm_no",

@@ -14,7 +14,8 @@
     "state_low_label",
     "state_high_label",
     "image_refresh",
-    "image_refresh_mode"
+    "image_refresh_mode",
+    "bg_image"
   ],
   "cards": {
     "": {

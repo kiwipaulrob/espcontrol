@@ -213,7 +213,6 @@ function renderPreview() {
           " 12px,rgba(255,255,255,.22) 12px,rgba(255,255,255,.22) 20px)";
       }
       var bgImage = cardBackgroundSupported(b) ? cardBackgroundImage(b.options) : "";
-      var bgOverlay = "";
       if (bgImage) {
         btn.className += " sp-btn-has-bg";
         btn.style.backgroundImage = "url('" + cardImageUrl(bgImage) + "')";
@@ -229,7 +228,6 @@ function renderPreview() {
       var iconHtml = previewHtmlValue(typePreview, "iconHtml",
         '<span class="sp-btn-icon mdi mdi-' + iconName + '"></span>');
       btn.innerHTML =
-        bgOverlay +
         sensorBadge +
         iconHtml +
         labelHtml;

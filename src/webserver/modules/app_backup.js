@@ -68,6 +68,31 @@ function backupCreateZip(entries) {
   return new Blob(chunks, { type: "application/zip" });
 }
 
+function backupReadStoredZip(buffer) {
+  var bytes = new Uint8Array(buffer);
+  var view = new DataView(buffer);
+  var entries = {};
+  var offset = 0;
+  while (offset + 4 <= bytes.length && view.getUint32(offset, true) === 0x04034b50) {
+    if (offset + 30 > bytes.length) throw new Error("Invalid ZIP backup.");
+    var flags = view.getUint16(offset + 6, true);
+    var compression = view.getUint16(offset + 8, true);
+    var size = view.getUint32(offset + 18, true);
+    var nameLength = view.getUint16(offset + 26, true);
+    var extraLength = view.getUint16(offset + 28, true);
+    if ((flags & 8) || compression !== 0) throw new Error("Unsupported ZIP backup format.");
+    var nameStart = offset + 30;
+    var dataStart = nameStart + nameLength + extraLength;
+    var dataEnd = dataStart + size;
+    if (dataEnd > bytes.length) throw new Error("Invalid ZIP backup.");
+    var name = new TextDecoder().decode(bytes.slice(nameStart, nameStart + nameLength));
+    entries[name] = bytes.slice(dataStart, dataEnd);
+    offset = dataEnd;
+  }
+  if (!entries["backup.json"]) throw new Error("ZIP backup is missing backup.json.");
+  return entries;
+}
+
 function backupDownload(blob, name) {
   var url = URL.createObjectURL(blob);
   var a = document.createElement("a");
@@ -83,10 +108,10 @@ function backupImageArchiveEntries() {
   return listCardImages(true).then(function (images) {
     var manifest = { format: "espcontrol.card-images", version: 1, images: [] };
     var entries = [];
-    return Promise.all((images || []).map(function (image) {
+    return (images || []).reduce(function (chain, image) {
       var id = normalizeCardBackgroundImageId(image && image.id);
-      if (!id) return Promise.resolve();
-      return fetch(cardImageUrl(id)).then(function (response) {
+      if (!id) return chain;
+      return chain.then(function () { return fetch(cardImageUrl(id)); }).then(function (response) {
         if (!response.ok) throw new Error("Could not read image " + (image.name || id));
         return response.arrayBuffer();
       }).then(function (buffer) {
@@ -94,7 +119,7 @@ function backupImageArchiveEntries() {
         manifest.images.push({ id: id, name: String(image.name || id), file: file });
         entries.push({ name: file, bytes: new Uint8Array(buffer) });
       });
-    })).then(function () {
+    }, Promise.resolve()).then(function () {
       entries.unshift({ name: "images.json", bytes: new TextEncoder().encode(JSON.stringify(manifest, null, 2)) });
       return entries;
     });
@@ -190,7 +215,7 @@ function exportConfig() {
 function importConfig() {
   var input = document.createElement("input");
   input.type = "file";
-  input.accept = ".json";
+  input.accept = ".json,.zip";
   input.style.display = "none";
   var importPostThrottleMs = 75;
 
@@ -209,9 +234,9 @@ function importConfig() {
       cleanupInput();
       showBanner("Invalid file \u2014 could not read backup", "error");
     };
-    reader.onload = function () {
+    function processImportText(importText) {
       var data;
-      try { data = JSON.parse(reader.result); } catch (_) {
+      try { data = JSON.parse(importText); } catch (_) {
         showBanner("Invalid file \u2014 could not parse JSON", "error");
         cleanupInput();
         return;
@@ -473,8 +498,22 @@ function importConfig() {
         if (!postQueueHadError()) showBanner("Configuration imported successfully", "success");
       });
       cleanupInput();
-    };
-    reader.readAsText(input.files[0]);
+    }
+    var selectedFile = input.files[0];
+    if (/\.zip$/i.test(selectedFile.name || "")) {
+      selectedFile.arrayBuffer()
+        .then(backupReadStoredZip)
+        .then(function (entries) {
+          processImportText(new TextDecoder().decode(entries["backup.json"]));
+        })
+        .catch(function (err) {
+          showBanner(err && err.message || "Invalid ZIP backup", "error");
+          cleanupInput();
+        });
+    } else {
+      reader.onload = function () { processImportText(reader.result); };
+      reader.readAsText(selectedFile);
+    }
   });
 
   document.body.appendChild(input);

@@ -480,6 +480,10 @@ function renderCardBackgroundControl(panel, b, helpers) {
   actions.appendChild(deleteBtn);
   field.appendChild(actions);
 
+  var availability = document.createElement("div");
+  availability.className = "sp-card-image-storage";
+  field.appendChild(availability);
+
   function selectedImage() {
     return cardBackgroundImage(b.options);
   }
@@ -507,6 +511,13 @@ function renderCardBackgroundControl(panel, b, helpers) {
 
   function fillSelect(items) {
     var current = selectedImage();
+    var info = cardImageLibraryInfo();
+    var available = !!info.available;
+    select.disabled = !available;
+    uploadBtn.disabled = !available;
+    availability.textContent = info.requiresUsbFlash
+      ? "Background images need one USB reflash to install image storage on this display."
+      : "";
     select.innerHTML = "";
     var none = document.createElement("option");
     none.value = "";
@@ -545,13 +556,14 @@ function renderCardBackgroundControl(panel, b, helpers) {
       showBanner(err && err.message || "Could not upload image.", "error");
     }).then(function () {
       upload.value = "";
-      uploadBtn.disabled = false;
+      uploadBtn.disabled = !cardImageLibraryInfo().available;
     });
   });
   deleteBtn.addEventListener("click", function () {
     var id = selectedImage();
     if (!id) return;
     deleteCardImage(id).then(function () {
+      clearCardImageReferences(id);
       setBackground("");
       return listCardImages(true);
     }).then(fillSelect);

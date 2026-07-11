@@ -57,7 +57,7 @@ function buildCardImageManagerCard() {
   body.appendChild(list);
 
   function setBusy(busy) {
-    upload.disabled = !!busy;
+    upload.disabled = !!busy || !cardImageLibraryInfo().available;
     refresh.disabled = !!busy;
   }
 
@@ -68,7 +68,10 @@ function buildCardImageManagerCard() {
     var total = formatCardImageSize(info.storageBytes);
     var free = formatCardImageSize(info.freeBytes);
     var max = formatCardImageSize(info.maxBytes);
-    storage.textContent = total
+    upload.disabled = !info.available;
+    storage.textContent = info.requiresUsbFlash
+      ? "Image storage is not installed. Reflash this display over USB once, then background images will become available."
+      : total
       ? (items || []).length + " image" + ((items || []).length === 1 ? "" : "s") +
         " \u2022 " + (used || "0 B") + " used of " + total +
         (free ? " \u2022 " + free + " free" : "") +
@@ -149,6 +152,7 @@ function buildCardImageManagerCard() {
         }
         setBusy(true);
         deleteCardImage(id)
+          .then(function () { clearCardImageReferences(id); })
           .then(function () { return listCardImages(true); })
           .then(function (fresh) {
             showBanner("Image deleted.", "success");
