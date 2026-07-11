@@ -133,6 +133,27 @@ async function installRoutes(context, slug) {
       });
       return;
     }
+    if (
+      requestUrl.hostname === "espcontrol.test" &&
+      requestUrl.pathname === "/api/card-images" &&
+      route.request().method() === "GET"
+    ) {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          available: true,
+          requires_usb_flash: false,
+          format_version: 1,
+          storage_bytes: 2 * 1024 * 1024,
+          used_bytes: 0,
+          free_bytes: 2 * 1024 * 1024,
+          max_bytes: 64 * 1024,
+          images: [],
+        }),
+      });
+      return;
+    }
     if (requestUrl.hostname === "espcontrol.test") {
       await route.fulfill({ status: 204, contentType: "text/plain", body: "" });
       return;

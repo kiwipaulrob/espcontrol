@@ -11,9 +11,6 @@ from pathlib import Path
 from product_schema import slot_devices
 
 ROOT = Path(__file__).resolve().parents[1]
-CARD_BACKGROUND_DOWNLOADER_COUNT = 9
-
-
 PACKAGE_HEADER = """# =============================================================================
 # PACKAGES - ESPHome include manifest
 # =============================================================================
@@ -419,12 +416,13 @@ def cfg_lines(device: dict) -> list[str]:
         lines.append(f"            cfg.image_card_image_count = {image_card_count};")
     if device.get("image_card_diagnostics"):
         lines.append("            cfg.image_card_diagnostics = true;")
+    card_background_count = device["slots"]
     lines.append("            static esphome::artwork_image::ArtworkImage *card_background_downloaders[] = {")
-    for num in range(1, CARD_BACKGROUND_DOWNLOADER_COUNT + 1):
+    for num in range(1, card_background_count + 1):
         lines.append(f"              id(card_background_download_{num}),")
     lines.append("            };")
     lines.append("            cfg.card_background_images = card_background_downloaders;")
-    lines.append(f"            cfg.card_background_image_count = {CARD_BACKGROUND_DOWNLOADER_COUNT};")
+    lines.append(f"            cfg.card_background_image_count = {card_background_count};")
     lines.append("            cfg.home_assistant_base_url = []() {")
     lines.append("              std::string base = id(cover_art_home_assistant_base_url);")
     lines.append("              while (!base.empty() && base.back() == '/') base.pop_back();")

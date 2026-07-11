@@ -111,12 +111,9 @@ script:
             id(card_background_download_4),
             id(card_background_download_5),
             id(card_background_download_6),
-            id(card_background_download_7),
-            id(card_background_download_8),
-            id(card_background_download_9),
           };
           cfg.card_background_images = card_background_downloaders;
-          cfg.card_background_image_count = 9;
+          cfg.card_background_image_count = 6;
           cfg.home_assistant_base_url = []() {
             std::string base = id(cover_art_home_assistant_base_url);
             while (!base.empty() && base.back() == '/') base.pop_back();
@@ -297,12 +294,9 @@ esphome:
               id(card_background_download_4),
               id(card_background_download_5),
               id(card_background_download_6),
-              id(card_background_download_7),
-              id(card_background_download_8),
-              id(card_background_download_9),
             };
             cfg.card_background_images = card_background_downloaders;
-            cfg.card_background_image_count = 9;
+            cfg.card_background_image_count = 6;
             cfg.home_assistant_base_url = []() {
               std::string base = id(cover_art_home_assistant_base_url);
               while (!base.empty() && base.back() == '/') base.pop_back();
@@ -475,12 +469,9 @@ esphome:
               id(card_background_download_4),
               id(card_background_download_5),
               id(card_background_download_6),
-              id(card_background_download_7),
-              id(card_background_download_8),
-              id(card_background_download_9),
             };
             cfg.card_background_images = card_background_downloaders;
-            cfg.card_background_image_count = 9;
+            cfg.card_background_image_count = 6;
             cfg.home_assistant_base_url = []() {
               std::string base = id(cover_art_home_assistant_base_url);
               while (!base.empty() && base.back() == '/') base.pop_back();

@@ -50,6 +50,7 @@ CONF_PLACEHOLDER = "placeholder"
 CONF_TRANSPARENCY = "transparency"
 CONF_UPDATE = "update"
 CONF_RESIZE_MODE = "resize_mode"
+CONF_LOCAL_ONLY = "local_only"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -181,6 +182,7 @@ ARTWORK_IMAGE_SCHEMA = (
             cv.Optional(CONF_PLACEHOLDER): cv.use_id(Image_),
             cv.Optional(CONF_BUFFER_SIZE, default=65536): cv.int_range(256, 524288),
             cv.Optional(CONF_ALLOW_INSECURE_LOCAL_URLS, default=False): cv.boolean,
+            cv.Optional(CONF_LOCAL_ONLY, default=False): cv.boolean,
             cv.Optional(CONF_ON_DOWNLOAD_FINISHED): automation.validate_automation({}),
             cv.Optional(CONF_ON_ERROR): automation.validate_automation({}),
         }
@@ -191,6 +193,8 @@ ARTWORK_IMAGE_SCHEMA = (
 
 def _consume_sockets(config):
     """Reserve one outbound HTTP socket for each artwork image instance."""
+    if config.get(CONF_LOCAL_ONLY):
+        return config
     try:
         from esphome.components import socket
     except ImportError:

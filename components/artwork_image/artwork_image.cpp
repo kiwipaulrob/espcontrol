@@ -267,6 +267,18 @@ std::string ArtworkImage::request_update_url(const std::string &url, int max_sou
   return effective_url;
 }
 
+bool ArtworkImage::request_update_container(std::shared_ptr<http_request::HttpContainer> container,
+                                            const std::string &source_key) {
+  if (container == nullptr || source_key.empty() || this->is_busy_()) return false;
+  this->last_http_status_ = 0;
+  this->last_error_was_ha_media_proxy_ = false;
+  this->url_ = source_key;
+  this->downloader_ = std::move(container);
+  this->log_state_("local-stream-start");
+  this->start_download_();
+  return true;
+}
+
 void ArtworkImage::cancel_update() {
   this->update_pending_ = false;
   this->pending_url_.clear();
@@ -331,6 +343,10 @@ void ArtworkImage::update() {
     return;
   }
 
+  this->start_download_();
+}
+
+void ArtworkImage::start_download_() {
   int http_code = this->downloader_->status_code;
   this->log_state_("response-ready");
   if (http_code == HTTP_CODE_NOT_MODIFIED) {

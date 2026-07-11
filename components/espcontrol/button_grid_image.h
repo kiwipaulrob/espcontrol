@@ -10,6 +10,7 @@
 #endif
 
 #include "esphome/core/version.h"
+#include "esphome/components/card_image_store/card_image_store.h"
 #include <cstring>
 
 constexpr uint32_t IMAGE_CARD_STARTUP_RETRY_MS = 45000;
@@ -22,8 +23,8 @@ constexpr uint32_t IMAGE_CARD_MODAL_CLEANUP_DELAY_MS = 100;
 constexpr uint32_t IMAGE_CARD_MODAL_CLOSE_GUARD_MS = 350;
 constexpr uint8_t IMAGE_CARD_STARTUP_DOWNLOAD_RETRIES = 10;
 constexpr int IMAGE_CARD_MAX_CONTEXTS = 6;
-constexpr int CARD_BACKGROUND_IMAGE_MAX_CONTEXTS = 9;
-constexpr int CARD_BACKGROUND_IMAGE_MAX_BINDINGS = MAX_GRID_SLOTS * 4;
+constexpr int CARD_BACKGROUND_IMAGE_MAX_CONTEXTS = MAX_GRID_SLOTS;
+constexpr int CARD_BACKGROUND_IMAGE_MAX_BINDINGS = MAX_GRID_SLOTS;
 constexpr uint8_t CARD_BACKGROUND_IMAGE_MAX_RETRIES = 3;
 constexpr uint32_t CARD_BACKGROUND_IMAGE_RETRY_DELAY_MS = 750;
 constexpr int IMAGE_CARD_MODAL_MAX_TARGET_SIDE_PX = 800;
@@ -842,15 +843,13 @@ inline void card_background_request_download(CardBackgroundImageCtx *ctx) {
   ctx->download_active = true;
   ctx->download_queued = false;
   card_background_active_download_context() = ctx;
-  ESP_LOGI("card_background", "Downloading card background image: %s (%dx%d)", ctx->id.c_str(), width, height);
-  std::string effective_url = ctx->image->request_update_url(
-    ctx->url, std::max(width, height));
-  if (effective_url.empty()) {
+  ESP_LOGI("card_background", "Decoding card background image: %s (%dx%d)", ctx->id.c_str(), width, height);
+  auto reader = esphome::card_image_store::CardImageStore::instance().open(ctx->id);
+  if (!reader || !ctx->image->request_update_container(reader, ctx->url)) {
     card_background_release_download_slot(ctx);
     ctx->retry_deadline_ms = esphome::millis() + CARD_BACKGROUND_IMAGE_RETRY_DELAY_MS;
     return;
   }
-  ctx->url = effective_url;
 }
 
 inline void card_background_start_next_queued_download(CardBackgroundImageCtx *finished_ctx) {
@@ -1179,7 +1178,7 @@ inline CardBackgroundImageCtx::Binding *card_background_add_binding(CardBackgrou
 }
 
 inline std::string card_background_image_url(const std::string &id) {
-  return "http://127.0.0.1/card-images/" + id + ".jpg";
+  return "card-image:" + id;
 }
 
 inline void card_background_register_widget(lv_obj_t *btn, lv_obj_t *widget,

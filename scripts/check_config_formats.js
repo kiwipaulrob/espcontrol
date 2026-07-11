@@ -2275,8 +2275,8 @@ assert.strictEqual(hooks.imageCardCandidateAllowedForTest(imageLimitSnapshot, {
 }), true, "replacing an existing image card frees a firmware slot");
 const backgroundCardForLimit = Object.assign({}, switchCardForImageLimit, { options: "bg_image=test-image" });
 const backgroundLimitSnapshot = {
-  grid: [1, 2, 3, 4, 5, 6, 7, 8, 9],
-  buttons: Array.from({ length: 9 }, () => backgroundCardForLimit),
+  grid: Array.from({ length: 20 }, (_, index) => index + 1),
+  buttons: Array.from({ length: 20 }, () => backgroundCardForLimit),
   subpages: {
     1: {
       grid: [1, 2],
@@ -2284,14 +2284,14 @@ const backgroundLimitSnapshot = {
     },
   },
 };
-assert.strictEqual(hooks.cardBackgroundImageLimit(), 9, "background card editor limit matches firmware downloader slots");
-assert.strictEqual(hooks.cardBackgroundImageCountForTest(backgroundLimitSnapshot), 9,
+assert.strictEqual(hooks.cardBackgroundImageLimit(), 20, "background card editor limit matches device slots");
+assert.strictEqual(hooks.cardBackgroundImageCountForTest(backgroundLimitSnapshot), 20,
   "background card count applies to the active page");
 assert.strictEqual(hooks.cardBackgroundImageCountForTest(backgroundLimitSnapshot, {
   isSub: false,
-  slot: 10,
+  slot: 21,
   button: backgroundCardForLimit,
-}), 10, "saving a tenth background card on the main page is detected");
+}), 21, "a background beyond the device slot capacity is detected");
 assert.strictEqual(hooks.cardBackgroundImageCountForTest(backgroundLimitSnapshot, {
   isSub: true,
   homeSlot: 1,

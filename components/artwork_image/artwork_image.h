@@ -75,6 +75,9 @@ class ArtworkImage : public PollingComponent,
   }
   /** Set the URL and start an update, returning the effective URL after any downloader rewrite. */
   std::string request_update_url(const std::string &url, int max_source_dim = 0);
+  /** Decode an already-open local stream without routing it through HTTP. */
+  bool request_update_container(std::shared_ptr<http_request::HttpContainer> container,
+                                const std::string &source_key);
   /** Stop any in-flight download/decode while keeping the last completed image buffer available. */
   void cancel_update();
   const std::string &get_url() const { return this->url_; }
@@ -203,6 +206,7 @@ class ArtworkImage : public PollingComponent,
   void draw_pixel_(int x, int y, Color color);
 
   void end_connection_();
+  void start_download_();
 
   CallbackManager<void(bool)> download_finished_callback_{};
   CallbackManager<void()> download_error_callback_{};

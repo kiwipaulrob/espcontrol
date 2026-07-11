@@ -52,8 +52,7 @@ var COVER_CONTROL_TABS_OPTION = cardContractOptionName("cover_tabs");
 var CLIMATE_CONTROL_TABS_OPTION = cardContractOptionName("climate_tabs");
 var FAN_CONTROL_TABS_OPTION = cardContractOptionName("fan_tabs");
 var IMAGE_CARD_LIMIT = Math.max(0, parseInt(CFG && CFG.imageCardLimit != null ? CFG.imageCardLimit : 4, 10) || 0);
-var CARD_BACKGROUND_IMAGE_LIMIT = Math.max(0,
-  parseInt(CFG && CFG.cardBackgroundImageLimit != null ? CFG.cardBackgroundImageLimit : 9, 10) || 0);
+var CARD_BACKGROUND_IMAGE_LIMIT = Math.max(0, parseInt(CFG && CFG.slots, 10) || 0);
 function configOptionEnabled(options, name) {
   var parts = String(options || "").split(",");
   for (var i = 0; i < parts.length; i++) {

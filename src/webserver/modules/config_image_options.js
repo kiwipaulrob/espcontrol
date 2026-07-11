@@ -49,8 +49,7 @@ function cardBackgroundImageLimit() {
 }
 
 function cardBackgroundImageLimitMessage() {
-  return "You can save background images on up to " + CARD_BACKGROUND_IMAGE_LIMIT +
-    " cards on each page.";
+  return "Every card position on this display can use a background image.";
 }
 
 function imageCardLimitMessage() {
