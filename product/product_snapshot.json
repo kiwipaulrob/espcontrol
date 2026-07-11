@@ -12,8 +12,8 @@
     "deviceProfiles": 6,
     "cardTypes": 40,
     "entityNames": 82,
-    "icons": 317,
-    "structuralIcons": 18,
+    "icons": 319,
+    "structuralIcons": 16,
     "compatibilityFixtureGroups": 2
   },
   "deviceProfiles": {
@@ -3749,18 +3749,6 @@
     },
     "structural": [
       {
-        "name": "Chevron Left",
-        "codepoint": "F0141",
-        "mdi": "chevron-left",
-        "comment": "Back button"
-      },
-      {
-        "name": "Chevron Right",
-        "codepoint": "F0142",
-        "mdi": "chevron-right",
-        "comment": "Subpage indicator"
-      },
-      {
         "name": "Close",
         "codepoint": "F0156",
         "mdi": "close",
@@ -3858,6 +3846,16 @@
       }
     ],
     "icons": [
+      {
+        "name": "Chevron Left",
+        "codepoint": "F0141",
+        "mdi": "chevron-left"
+      },
+      {
+        "name": "Chevron Right",
+        "codepoint": "F0142",
+        "mdi": "chevron-right"
+      },
       {
         "name": "Account",
         "codepoint": "F0004",
