@@ -30,6 +30,9 @@ static void jpeg_error_exit(j_common_ptr cinfo) {
 
 static constexpr size_t MAX_JPEG_DOWNLOAD_SIZE = 2 * 1024 * 1024;  // 2 MB
 static constexpr uint32_t JPEG_DECODE_BUDGET_MS = 12;
+static constexpr uint32_t SMALL_JPEG_DECODE_BUDGET_MS = 35;
+static constexpr size_t SMALL_JPEG_MAX_BYTES = 64 * 1024;
+static constexpr int SMALL_JPEG_MAX_SIDE = 256;
 static constexpr int JPEG_SCANLINE_BATCH = 8;
 
 #if defined(USE_ESP_IDF) && defined(CONFIG_IDF_TARGET_ESP32P4)
@@ -268,6 +271,16 @@ int JpegDecoder::start_decode_(uint8_t *buffer, size_t size) {
 
   this->use_rgb565_ = (this->image_->image_type() == image::ImageType::IMAGE_TYPE_RGB565);
   this->big_endian_ = this->image_->is_big_endian();
+  if (this->use_rgb565_ && (this->x_scale_ != 1.0 || this->y_scale_ != 1.0)) {
+    this->rgb565_frame_stride_ = static_cast<size_t>(this->out_w_) * 2;
+    size_t frame_size = this->rgb565_frame_stride_ * this->out_h_;
+    this->rgb565_frame_buffer_ = static_cast<uint8_t *>(
+        heap_caps_malloc(frame_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (this->rgb565_frame_buffer_ == nullptr) {
+      this->rgb565_frame_stride_ = 0;
+      ESP_LOGW(TAG, "Could not allocate RGB565 staging frame; using scanline scaling");
+    }
+  }
   this->source_size_ = size;
   this->y_ = 0;
   this->decode_started_ = true;
@@ -307,7 +320,12 @@ int JpegDecoder::decode_scanlines_() {
           }
           dst += 2;
         }
-        this->draw_rgb565_block(0, this->y_, this->out_w_, 1, this->row_buffer_);
+        if (this->rgb565_frame_buffer_ != nullptr) {
+          memcpy(this->rgb565_frame_buffer_ + static_cast<size_t>(this->y_) * this->rgb565_frame_stride_,
+                 this->row_buffer_, this->rgb565_frame_stride_);
+        } else {
+          this->draw_rgb565_block(0, this->y_, this->out_w_, 1, this->row_buffer_);
+        }
       } else {
         for (int x = 0; x < this->out_w_; x++) {
           Color color(this->row_buffer_[x * 3 + 0], this->row_buffer_[x * 3 + 1], this->row_buffer_[x * 3 + 2]);
@@ -317,7 +335,11 @@ int JpegDecoder::decode_scanlines_() {
       this->y_++;
     }
     App.feed_wdt();
-    if (millis() - start >= JPEG_DECODE_BUDGET_MS) {
+    uint32_t budget = this->source_size_ <= SMALL_JPEG_MAX_BYTES && this->out_w_ <= SMALL_JPEG_MAX_SIDE &&
+                              this->out_h_ <= SMALL_JPEG_MAX_SIDE
+                          ? SMALL_JPEG_DECODE_BUDGET_MS
+                          : JPEG_DECODE_BUDGET_MS;
+    if (millis() - start >= budget) {
       break;
     }
   }
@@ -327,6 +349,10 @@ int JpegDecoder::decode_scanlines_() {
   }
 
   jpeg_finish_decompress(&this->cinfo_);
+  if (this->rgb565_frame_buffer_ != nullptr) {
+    this->draw_rgb565_frame(this->out_w_, this->out_h_, this->rgb565_frame_stride_,
+                            this->rgb565_frame_buffer_);
+  }
   ESP_LOGD(TAG, "JPEG decode finished: output=%dx%d", this->out_w_, this->out_h_);
   size_t decoded = this->source_size_;
   this->decoded_bytes_ = decoded;
@@ -338,6 +364,11 @@ void JpegDecoder::cleanup_() {
   if (this->row_buffer_ != nullptr) {
     free(this->row_buffer_);
     this->row_buffer_ = nullptr;
+  }
+  if (this->rgb565_frame_buffer_ != nullptr) {
+    free(this->rgb565_frame_buffer_);
+    this->rgb565_frame_buffer_ = nullptr;
+    this->rgb565_frame_stride_ = 0;
   }
   if (this->cinfo_created_) {
     if (setjmp(this->jerr_.setjmp_buffer) == 0) {

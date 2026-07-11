@@ -3,6 +3,8 @@
 
 #include "esphome/core/log.h"
 
+#include <vector>
+
 namespace esphome {
 namespace artwork_image {
 
@@ -110,15 +112,21 @@ void ImageDecoder::draw_rgb565_frame(int width, int height, size_t stride_bytes,
   int start_y = std::max(0, this->y_offset_);
   int end_x = std::min(this->image_->decode_buffer_width_, this->x_offset_ + content_width);
   int end_y = std::min(this->image_->decode_buffer_height_, this->y_offset_ + content_height);
+  std::vector<size_t> source_x_offsets(static_cast<size_t>(std::max(0, end_x - start_x)));
+  for (int dst_x = start_x; dst_x < end_x; dst_x++) {
+    int src_x = std::min(width - 1, (dst_x - this->x_offset_) * width / content_width);
+    source_x_offsets[dst_x - start_x] = static_cast<size_t>(src_x) * 2;
+  }
   for (int dst_y = start_y; dst_y < end_y; dst_y++) {
     int src_y = std::min(height - 1, (dst_y - this->y_offset_) * height / content_height);
     const uint8_t *source_row = data + static_cast<size_t>(src_y) * stride_bytes;
+    uint8_t *destination = this->image_->decode_buffer_ + this->image_->get_position_(start_x, dst_y);
     for (int dst_x = start_x; dst_x < end_x; dst_x++) {
-      int src_x = std::min(width - 1, (dst_x - this->x_offset_) * width / content_width);
-      const uint8_t *source = source_row + static_cast<size_t>(src_x) * 2;
-      int destination = this->image_->get_position_(dst_x, dst_y);
-      memcpy(this->image_->decode_buffer_ + destination, source, 2);
-      if (bpp_bytes > 2) this->image_->decode_buffer_[destination + 2] = 0xFF;
+      const uint8_t *source = source_row + source_x_offsets[dst_x - start_x];
+      destination[0] = source[0];
+      destination[1] = source[1];
+      if (bpp_bytes > 2) destination[2] = 0xFF;
+      destination += bpp_bytes;
     }
   }
 }
