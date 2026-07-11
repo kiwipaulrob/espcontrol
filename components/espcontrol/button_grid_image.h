@@ -1216,6 +1216,26 @@ inline bool card_background_widget_on_page(lv_obj_t *btn, lv_obj_t *page) {
 
 inline void card_background_unregister_page(lv_obj_t *page) {
   if (!page) return;
+  if (card_background_active_page() == page) {
+    card_background_active_page() = nullptr;
+    lv_timer_t *&refresh_timer = card_background_final_refresh_timer();
+    if (refresh_timer) {
+      lv_timer_del(refresh_timer);
+      refresh_timer = nullptr;
+    }
+  }
+  CardBackgroundImageCtx *contexts = card_background_image_contexts();
+  for (int i = 0; i < CARD_BACKGROUND_IMAGE_MAX_CONTEXTS; i++) {
+    CardBackgroundImageCtx *ctx = &contexts[i];
+    for (auto &binding : ctx->bindings) {
+      if (!binding.active || !card_background_widget_on_page(binding.btn, page)) continue;
+      image_card_clear_widget_source(binding.widget);
+      binding.active = false;
+      binding.btn = nullptr;
+      binding.widget = nullptr;
+    }
+    card_background_deactivate_if_unused(ctx);
+  }
   auto &refs = card_background_widget_refs();
   refs.erase(
     std::remove_if(

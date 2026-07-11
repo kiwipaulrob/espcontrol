@@ -126,6 +126,66 @@ function backupImageArchiveEntries() {
   });
 }
 
+function backupRestoreArchivedImages(entries) {
+  if (!entries || !entries["images.json"]) return Promise.resolve({});
+  var manifest;
+  try {
+    manifest = JSON.parse(new TextDecoder().decode(entries["images.json"]));
+  } catch (_) {
+    return Promise.reject(new Error("ZIP backup has an invalid image manifest."));
+  }
+  if (!manifest || manifest.format !== "espcontrol.card-images" || manifest.version !== 1 ||
+      !Array.isArray(manifest.images)) {
+    return Promise.reject(new Error("ZIP backup has an unsupported image manifest."));
+  }
+  var idMap = {};
+  return manifest.images.reduce(function (chain, image) {
+    return chain.then(function () {
+      var oldId = normalizeCardBackgroundImageId(image && image.id);
+      var file = String(image && image.file || "");
+      var bytes = entries[file];
+      if (!oldId || file !== "images/" + oldId + ".jpg" || !bytes) {
+        throw new Error("ZIP backup is missing an archived card image.");
+      }
+      return fetch("/api/card-images", {
+        method: "POST",
+        headers: { "Content-Type": "image/jpeg" },
+        body: bytes,
+      }).then(function (response) {
+        if (!response.ok) {
+          return response.text().then(function (message) {
+            throw new Error(message || "Could not restore an archived card image.");
+          });
+        }
+        return response.json();
+      }).then(function (restored) {
+        var newId = normalizeCardBackgroundImageId(restored && restored.id);
+        if (!newId) throw new Error("Could not restore an archived card image.");
+        idMap[oldId] = newId;
+        var name = String(image && image.name || oldId).trim();
+        return name && name !== newId ? renameCardImage(newId, name) : null;
+      });
+    });
+  }, Promise.resolve()).then(function () {
+    _cardImageLibrary = [];
+    return idMap;
+  });
+}
+
+function backupRemapImportedImageReferences(backupPlan, idMap) {
+  function remapButtons(buttons) {
+    (buttons || []).forEach(function (button) {
+      var oldId = cardBackgroundImage(button && button.options);
+      if (!oldId || !idMap[oldId]) return;
+      button.options = setConfigOptionValue(button.options, CARD_BACKGROUND_IMAGE_OPTION, idMap[oldId]);
+    });
+  }
+  remapButtons(backupPlan && backupPlan.buttons);
+  Object.keys(backupPlan && backupPlan.subpages || {}).forEach(function (key) {
+    remapButtons(backupPlan.subpages[key] && backupPlan.subpages[key].buttons);
+  });
+}
+
 function exportConfig() {
   var data = createBackupConfig({
     device: DEVICE_ID,
@@ -234,7 +294,7 @@ function importConfig() {
       cleanupInput();
       showBanner("Invalid file \u2014 could not read backup", "error");
     };
-    function processImportText(importText) {
+    function processImportText(importText, zipEntries) {
       var data;
       try { data = JSON.parse(importText); } catch (_) {
         showBanner("Invalid file \u2014 could not parse JSON", "error");
@@ -253,6 +313,9 @@ function importConfig() {
       for (var warningIdx = 0; warningIdx < backupPlan.warnings.length; warningIdx++) {
         showBanner(backupPlan.warnings[warningIdx], "warning");
       }
+
+      return backupRestoreArchivedImages(zipEntries).then(function (imageIdMap) {
+      backupRemapImportedImageReferences(backupPlan, imageIdMap);
 
       setPostThrottle(importPostThrottleMs);
       resetPostQueueError();
@@ -498,13 +561,17 @@ function importConfig() {
         if (!postQueueHadError()) showBanner("Configuration imported successfully", "success");
       });
       cleanupInput();
+      }).catch(function (err) {
+        showBanner(err && err.message || "Could not restore backup images.", "error");
+        cleanupInput();
+      });
     }
     var selectedFile = input.files[0];
     if (/\.zip$/i.test(selectedFile.name || "")) {
       selectedFile.arrayBuffer()
         .then(backupReadStoredZip)
         .then(function (entries) {
-          processImportText(new TextDecoder().decode(entries["backup.json"]));
+          return processImportText(new TextDecoder().decode(entries["backup.json"]), entries);
         })
         .catch(function (err) {
           showBanner(err && err.message || "Invalid ZIP backup", "error");
