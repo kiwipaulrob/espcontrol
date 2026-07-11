@@ -105,10 +105,17 @@ static bool p4_scale_rgb565(const uint8_t *source, uint32_t source_stride_pixels
   ppa_client_handle_t client = p4_ppa_scaler();
   if (client == nullptr || source == nullptr || target_width == 0 || target_height == 0) return false;
   size_t target_size = static_cast<size_t>(target_width) * target_height * 2;
-  if (scaled == nullptr || scaled_capacity < target_size) {
-    free(scaled);
-    scaled = static_cast<uint8_t *>(heap_caps_malloc(target_size, MALLOC_CAP_DMA | MALLOC_CAP_SPIRAM));
-    scaled_capacity = scaled != nullptr ? target_size : 0;
+  // ESP32-P4 PPA requires both the output address and advertised buffer size to
+  // be aligned to the external-RAM cache line. Card dimensions are often odd,
+  // so the exact RGB565 byte count is not necessarily aligned.
+  static constexpr size_t PPA_BUFFER_ALIGNMENT = 64;
+  size_t required_capacity =
+      (target_size + PPA_BUFFER_ALIGNMENT - 1) & ~(PPA_BUFFER_ALIGNMENT - 1);
+  if (scaled == nullptr || scaled_capacity < required_capacity) {
+    heap_caps_free(scaled);
+    scaled = static_cast<uint8_t *>(heap_caps_aligned_alloc(
+        PPA_BUFFER_ALIGNMENT, required_capacity, MALLOC_CAP_DMA | MALLOC_CAP_SPIRAM));
+    scaled_capacity = scaled != nullptr ? required_capacity : 0;
   }
   if (scaled == nullptr) return false;
 
@@ -143,7 +150,12 @@ static bool p4_scale_rgb565(const uint8_t *source, uint32_t source_stride_pixels
   config.scale_x = static_cast<float>(target_width) / crop_width;
   config.scale_y = static_cast<float>(target_height) / crop_height;
   config.mode = PPA_TRANS_MODE_BLOCKING;
-  return ppa_do_scale_rotate_mirror(client, &config) == ESP_OK;
+  esp_err_t err = ppa_do_scale_rotate_mirror(client, &config);
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "ESP32-P4 PPA scaling failed (error %d); using CPU scaling", err);
+    return false;
+  }
+  return true;
 }
 #endif
 
