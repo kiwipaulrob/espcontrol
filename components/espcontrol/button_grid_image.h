@@ -913,7 +913,18 @@ inline void card_background_apply_downloaded(CardBackgroundImageCtx *ctx) {
 
 inline void card_background_reveal_page_if_ready() {
   lv_obj_t *page = card_background_active_page();
-  if (!page || lv_scr_act() != page) return;
+  if (!page) return;
+  if (lv_scr_act() != page) {
+    lv_timer_t *&refresh_timer = card_background_final_refresh_timer();
+    if (!refresh_timer) {
+      refresh_timer = lv_timer_create([](lv_timer_t *timer) {
+        lv_timer_del(timer);
+        card_background_final_refresh_timer() = nullptr;
+        card_background_reveal_page_if_ready();
+      }, 50, nullptr);
+    }
+    return;
+  }
   int expected = 0;
   int settled = 0;
   for (const auto &ref : card_background_widget_refs()) {
@@ -1359,6 +1370,14 @@ inline void apply_card_background_image(BtnSlot &s, const ParsedCfg &p,
   lv_obj_add_flag(img, LV_OBJ_FLAG_HIDDEN);
   image_card_apply_tile_image_align(img);
   card_background_register_widget(s.btn, img, id);
+
+  lv_obj_t *active_page = card_background_active_page();
+  if (!active_page || !card_background_widget_on_page(s.btn, active_page)) {
+    card_background_position_widget(s.btn, img);
+    lv_obj_move_background(img);
+    card_background_move_content_foreground(s);
+    return;
+  }
 
   if (target_width <= 0 || target_height <= 0) {
     lv_obj_move_background(img);

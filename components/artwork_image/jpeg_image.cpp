@@ -156,10 +156,7 @@ int JpegDecoder::decode_hardware_(uint8_t *buffer, size_t size) {
     free(hardware_output);
     return DECODE_ERROR_OUT_OF_MEMORY;
   }
-  for (uint32_t y = 0; y < info.height; y++) {
-    this->draw_rgb565_block(0, y, info.width, 1,
-                            hardware_output + static_cast<size_t>(y) * padded_width * 2);
-  }
+  this->draw_rgb565_frame(info.width, info.height, static_cast<size_t>(padded_width) * 2, hardware_output);
   free(hardware_output);
 
   this->decoded_bytes_ = size;
