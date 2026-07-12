@@ -224,10 +224,6 @@ function buildSystemSettingsCards() {
   firmwareSubpanels.appendChild(wifiFirmwarePanel);
 
   var previousFirmwareBody = document.createElement("div");
-  previousFirmwareBody.appendChild(infoPanel(
-    "sp-fw-previous-info",
-    "Installing an older firmware version may remove features or settings added in later versions."
-  ));
   var fwVersionField = document.createElement("div");
   fwVersionField.className = "sp-field sp-fw-version-field";
   fwVersionField.appendChild(fieldLabel("Version", "sp-set-firmware-version"));

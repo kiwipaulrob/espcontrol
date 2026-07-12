@@ -820,17 +820,23 @@ async function assertSettingsPage(page, label, options = {}) {
       await page.locator("#sp-set-update-freq").isVisible(),
       `${label}: enabled auto updates should show frequency inside the panel`,
     );
+    assert.deepStrictEqual(
+      await firmwareCard
+        .locator(
+          ".sp-fw-label, .sp-fw-version, .sp-disclosure-button, .sp-toggle-label, .sp-select, .sp-fw-btn",
+        )
+        .evaluateAll((nodes) => [
+          ...new Set(nodes.map((node) => getComputedStyle(node).fontSize)),
+        ]),
+      ["14px"],
+      `${label}: firmware labels, values, headings, fields, and actions should use one primary font size`,
+    );
     assert.strictEqual(
       await page.locator("#sp-fw-previous-panel .sp-disclosure-button").getAttribute("aria-expanded"),
       "false",
       `${label}: previous firmware should start closed`,
     );
     await page.locator("#sp-fw-previous-panel .sp-disclosure-button").click();
-    assert.strictEqual(
-      await page.locator("#sp-fw-previous-info").innerText(),
-      "Installing an older firmware version may remove features or settings added in later versions.",
-      `${label}: previous firmware warning should match`,
-    );
     assert.deepStrictEqual(
       await page.locator("#sp-set-firmware-version option").evaluateAll(
         (options) => options.map((option) => option.value),

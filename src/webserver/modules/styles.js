@@ -515,12 +515,12 @@ var CSS =
   ".sp-fw-info-row{min-height:28px;margin-bottom:8px}" +
   ".sp-fw-overview{margin-bottom:18px}" +
   ".sp-fw-subpanels{display:grid;gap:12px}" +
-  ".sp-fw-subpanels .sp-disclosure{margin-top:0;background:var(--surface2)}" +
+  ".sp-fw-subpanels .sp-disclosure{margin-top:0;background:var(--surface)}" +
   ".sp-fw-subpanels .sp-disclosure+.sp-disclosure{margin-top:0}" +
   ".sp-fw-subpanels .sp-disclosure-body{padding:18px 14px 16px}" +
   ".sp-fw-subpanels .sp-toggle-row:last-child{margin-bottom:0}" +
   ".sp-fw-version{font-size:.875rem;color:var(--text)}" +
-  ".sp-fw-label{font-size:inherit;color:var(--text2)}" +
+  ".sp-fw-label{font-size:.875rem;color:var(--text2)}" +
   ".sp-fw-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-left:auto}" +
   ".sp-fw-actions-full{justify-content:flex-start;margin:12px 0 0}" +
   ".sp-fw-previous-actions{display:flex;justify-content:flex-end;margin-top:12px}" +
@@ -533,7 +533,7 @@ var CSS =
   ".sp-fw-status.sp-update-error{color:var(--danger)}" +
   ".sp-fw-status a{color:inherit;text-decoration:underline;text-underline-offset:2px}" +
   ".sp-fw-btn{background:var(--surface2);color:var(--text);border:1px solid var(--border);" +
-  "border-radius:var(--action-r);padding:8px 14px;font-size:.8rem;font-weight:500;cursor:pointer;" +
+  "border-radius:var(--action-r);padding:8px 14px;font-size:.875rem;font-weight:500;cursor:pointer;" +
   "font-family:inherit;transition:all .25s;white-space:nowrap}" +
   ".sp-fw-btn:hover{background:var(--border);border-color:#4a4d54}" +
   ".sp-fw-btn:disabled{opacity:.4;cursor:not-allowed}" +
