@@ -70,6 +70,7 @@ if (typeof globalThis !== "undefined" && globalThis.__ESPCONTROL_TEST_HOOKS__) {
         latest: state.firmwareLatestVersion,
         updateState: state.firmwareUpdateState,
         installAvailable: latestFirmwareInstallAvailable(),
+        installAction: latestFirmwareInstallAction(),
       };
       state.firmwareVersion = oldVersion;
       state.firmwareLatestVersion = oldLatest;

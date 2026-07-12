@@ -59,22 +59,22 @@ function buildSystemSettingsCards() {
   var fwCheckBtn = createActionButton("sp-fw-btn", "Check for Update");
   fwCheckBtn.addEventListener("click", function () {
     if (!firmwareUpdateControlsVisible()) return;
-    if (latestFirmwareInstallAvailable()) {
+    var installAction = latestFirmwareInstallAction();
+    if (installAction !== "check") {
       var latestInfo = latestFirmwareInfo();
-      var updateReady = firmwareUpdateAvailable();
       state.firmwareInstallTargetVersion = latestInfo && latestInfo.latest_version ?
         latestInfo.latest_version :
         state.firmwareLatestVersion;
-      state.firmwareInstallPostPending = !updateReady;
+      state.firmwareInstallPostPending = installAction === "check_then_install";
       state.firmwareChecking = false;
-      if (updateReady) {
+      if (installAction === "install") {
         state.firmwareUpdateState = "INSTALLING";
         state.firmwareInstallStatus = "Installing update\u2026";
         renderFirmwareUpdateStatus();
         clearFirmwareWebOtaFallback();
         postFirmwareUpdateInstall();
         startFirmwareInstallRefresh();
-      } else if (installingLatest) {
+      } else {
         state.firmwareUpdateState = "INSTALLING";
         state.firmwareInstallStatus = "Checking update before install\u2026";
         renderFirmwareUpdateStatus();

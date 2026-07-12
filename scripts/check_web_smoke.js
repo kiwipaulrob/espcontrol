@@ -1507,6 +1507,16 @@ assert.strictEqual(
   "v1.11.1"
 );
 assert.strictEqual(
+  hooks.firmwareVersionAfterUpdateInfo("v1.10.0", { state: "NO UPDATE", latest_version: "v1.11.1" }).installAction,
+  "check_then_install",
+  "public firmware discovered before the update entity should check and then install"
+);
+assert.strictEqual(
+  hooks.firmwareVersionAfterUpdateInfo("v1.10.0", { state: "UPDATE AVAILABLE", latest_version: "v1.11.1" }).installAction,
+  "install",
+  "a confirmed firmware update should install immediately"
+);
+assert.strictEqual(
   hooks.firmwareVersionAfterUpdateInfo("Dev", { state: "UPDATE AVAILABLE", latest_version: "v1.11.1" }).version,
   "Dev build"
 );

@@ -27,6 +27,11 @@ function latestFirmwareInstallAvailable() {
     !installedFirmwareMatchesPublicRelease();
 }
 
+function latestFirmwareInstallAction() {
+  if (!latestFirmwareInstallAvailable()) return "check";
+  return firmwareUpdateAvailable() ? "install" : "check_then_install";
+}
+
 function latestFirmwareInfoFromState() {
   if (!isSpecificFirmwareVersion(state.firmwareLatestVersion)) return null;
   return {
