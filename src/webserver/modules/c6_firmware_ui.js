@@ -22,6 +22,9 @@ function c6FirmwareUpdateKnownAvailable() {
 function syncC6FirmwareUi() {
   var show = state.c6FirmwareUpdateControlsSupported === true;
   if (els.c6FirmwareCard) els.c6FirmwareCard.style.display = show ? "" : "none";
+  if (els.c6FirmwareBadge) {
+    els.c6FirmwareBadge.classList.toggle("sp-hidden", !c6FirmwareUpdateKnownAvailable());
+  }
   if (els.c6FirmwareCurrent) {
     els.c6FirmwareCurrent.textContent = displayC6FirmwareVersion(state.c6FirmwareCurrentVersion);
   }

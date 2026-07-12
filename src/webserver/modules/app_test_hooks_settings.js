@@ -69,7 +69,7 @@ if (typeof globalThis !== "undefined" && globalThis.__ESPCONTROL_TEST_HOOKS__) {
         version: state.firmwareVersion,
         latest: state.firmwareLatestVersion,
         updateState: state.firmwareUpdateState,
-        installAvailable: firmwareInstallAvailable(),
+        installAvailable: latestFirmwareInstallAvailable(),
       };
       state.firmwareVersion = oldVersion;
       state.firmwareLatestVersion = oldLatest;
@@ -112,7 +112,7 @@ if (typeof globalThis !== "undefined" && globalThis.__ESPCONTROL_TEST_HOOKS__) {
         updateState: state.firmwareUpdateState,
         releaseUrl: state.firmwareReleaseUrl,
         updateAvailable: firmwareUpdateAvailable(),
-        installAvailable: firmwareInstallAvailable(),
+        installAvailable: latestFirmwareInstallAvailable(),
       };
       state.firmwareVersion = oldVersion;
       state.firmwareLatestVersion = oldLatest;
@@ -151,13 +151,14 @@ if (typeof globalThis !== "undefined" && globalThis.__ESPCONTROL_TEST_HOOKS__) {
       setFirmwareVersion(initialVersion);
       setPublicFirmwareVersions(firmwareInfosFromPublicVersions(versionIndex));
       if (selectedVersion) state.firmwareSelectedVersion = selectedVersion;
-      var selected = selectedFirmwareInfo();
+      var selected = selectedPreviousFirmwareInfo();
       var result = {
         latest: state.firmwareLatestVersion,
         selected: selected && selected.latest_version,
-        installAvailable: firmwareInstallAvailable(),
+        installAvailable: previousFirmwareInstallAvailable(),
         selectorVisible: firmwareVersionSelectorVisible(),
-        installedSelected: selectedFirmwareMatchesInstalled(),
+        installedSelected: !!selected && firmwareVersionsSame(selected.latest_version, state.firmwareVersion),
+        previous: previousFirmwareInfos().map(function (info) { return info.latest_version; }),
       };
       state.firmwareVersion = oldVersion;
       state.firmwareLatestVersion = oldLatest;

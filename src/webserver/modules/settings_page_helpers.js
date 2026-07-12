@@ -62,7 +62,16 @@ function statusBadge(label) {
   return badge;
 }
 
-function inlineDisclosure(title, bodyElement, defaultOpen) {
+function disclosureBadge(text, label) {
+  var badge = document.createElement("span");
+  badge.className = "sp-disclosure-badge";
+  badge.setAttribute("aria-label", label || text);
+  badge.appendChild(textSpan("", "sp-disclosure-badge-dot"));
+  badge.appendChild(textSpan(text));
+  return badge;
+}
+
+function inlineDisclosure(title, bodyElement, defaultOpen, badgeElement) {
   var panel = document.createElement("div");
   panel.className = "sp-disclosure" + (defaultOpen ? " sp-open" : "");
   var button = document.createElement("button");
@@ -71,9 +80,13 @@ function inlineDisclosure(title, bodyElement, defaultOpen) {
   button.setAttribute("aria-expanded", defaultOpen ? "true" : "false");
   var label = document.createElement("span");
   label.textContent = title;
+  var rightWrap = document.createElement("span");
+  rightWrap.className = "sp-disclosure-header-right";
   var chevron = createDisclosureChevron("sp-disclosure-chevron");
   button.appendChild(label);
-  button.appendChild(chevron);
+  if (badgeElement) rightWrap.appendChild(badgeElement);
+  rightWrap.appendChild(chevron);
+  button.appendChild(rightWrap);
   var body = document.createElement("div");
   body.className = "sp-disclosure-body";
   body.appendChild(bodyElement);

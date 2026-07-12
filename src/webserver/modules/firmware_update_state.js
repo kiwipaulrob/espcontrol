@@ -15,12 +15,16 @@ function publicFirmwareInstallAvailable() {
   return publicFirmwareReleaseKnown() && !installedFirmwareMatchesPublicRelease();
 }
 
-function firmwareInstallAvailable() {
-  var info = selectedFirmwareInfo();
+function latestFirmwareInfo() {
+  return findFirmwareVersionInfo(state.firmwareLatestVersion) || latestFirmwareInfoFromState();
+}
+
+function latestFirmwareInstallAvailable() {
+  var info = latestFirmwareInfo();
   return state.firmwareInstallControlsSupported === true &&
     !!info &&
     isSpecificFirmwareVersion(info.latest_version) &&
-    !selectedFirmwareMatchesInstalled();
+    !installedFirmwareMatchesPublicRelease();
 }
 
 function latestFirmwareInfoFromState() {
@@ -52,54 +56,66 @@ function selectedFirmwareInfo() {
     latestFirmwareInfoFromState();
 }
 
-function selectedFirmwareVersion() {
-  var info = selectedFirmwareInfo();
-  return info ? info.latest_version : "";
+function previousFirmwareInfos() {
+  return state.firmwareVersionOptions.filter(function (info) {
+    var version = info && info.latest_version;
+    return isSpecificFirmwareVersion(version) &&
+      !firmwareVersionsSame(version, state.firmwareLatestVersion) &&
+      !firmwareVersionsSame(version, state.firmwareVersion);
+  });
 }
 
-function selectedFirmwareIsLatest() {
-  var version = selectedFirmwareVersion();
-  return !version || !publicFirmwareReleaseKnown() ||
-    firmwareVersionsSame(version, state.firmwareLatestVersion);
+function selectedPreviousFirmwareInfo() {
+  var options = previousFirmwareInfos();
+  for (var i = 0; i < options.length; i++) {
+    if (firmwareVersionsSame(options[i].latest_version, state.firmwareSelectedVersion)) {
+      return options[i];
+    }
+  }
+  return options.length ? options[0] : null;
 }
 
-function selectedFirmwareMatchesInstalled() {
-  var version = selectedFirmwareVersion();
-  return isSpecificFirmwareVersion(version) &&
-    isSpecificFirmwareVersion(state.firmwareVersion) &&
-    firmwareVersionsSame(state.firmwareVersion, version);
+function previousFirmwareInstallAvailable() {
+  var info = selectedPreviousFirmwareInfo();
+  return state.firmwareInstallControlsSupported === true &&
+    !!info &&
+    !firmwareVersionsSame(info.latest_version, state.firmwareVersion);
 }
 
 function firmwareVersionSelectorVisible() {
-  return state.firmwareVersionIndexLoaded && state.firmwareVersionOptions.length > 1;
+  return state.firmwareVersionIndexLoaded && previousFirmwareInfos().length > 0;
 }
 
 function syncFirmwareVersionSelect() {
   if (!els.fwVersionSelect) return;
-  var options = state.firmwareVersionOptions;
+  var options = previousFirmwareInfos();
   els.fwVersionSelect.innerHTML = "";
   if (!options.length) {
-    if (els.fwVersionField) els.fwVersionField.style.display = "none";
+    state.firmwareSelectedVersion = "";
+    syncPreviousFirmwareUi();
     return;
   }
-  if (!findFirmwareVersionInfo(state.firmwareSelectedVersion)) {
-    state.firmwareSelectedVersion = options[0].latest_version;
-  }
+  state.firmwareSelectedVersion = selectedPreviousFirmwareInfo().latest_version;
   for (var i = 0; i < options.length; i++) {
     var info = options[i];
     var option = document.createElement("option");
     option.value = info.latest_version;
-    option.textContent = info.latest_version +
-      (i === 0 || firmwareVersionsSame(info.latest_version, state.firmwareLatestVersion) ? " (Latest)" : "");
-    if (firmwareVersionsSame(info.latest_version, state.firmwareVersion)) {
-      option.textContent += " (Installed)";
-    }
+    option.textContent = info.latest_version;
     els.fwVersionSelect.appendChild(option);
   }
   els.fwVersionSelect.value = state.firmwareSelectedVersion;
-  if (els.fwVersionField) {
-    els.fwVersionField.style.display =
-      firmwareUpdateControlsVisible() && firmwareVersionSelectorVisible() ? "" : "none";
+  syncPreviousFirmwareUi();
+}
+
+function syncPreviousFirmwareUi() {
+  var show = firmwareUpdateControlsVisible() && firmwareVersionSelectorVisible();
+  if (els.fwPreviousPanel) els.fwPreviousPanel.style.display = show ? "" : "none";
+  var busy = state.firmwareUpdateState === "INSTALLING" || state.firmwareChecking;
+  if (els.fwVersionSelect) els.fwVersionSelect.disabled = busy || !show;
+  if (els.fwPreviousInstallBtn) {
+    els.fwPreviousInstallBtn.disabled = busy || !show || !previousFirmwareInstallAvailable();
+    els.fwPreviousInstallBtn.className = "sp-fw-btn" + (busy ? " sp-fw-btn-busy" : "");
+    els.fwPreviousInstallBtn.textContent = state.firmwareUpdateState === "INSTALLING" ? "Installing…" : "Install";
   }
 }
 
@@ -144,18 +160,6 @@ function installedFirmwareMatchesPublicRelease() {
     firmwareVersionsSame(state.firmwareVersion, state.firmwareLatestVersion);
 }
 
-function publicFirmwareStatusHtml() {
-  var info = selectedFirmwareInfo() || latestFirmwareInfoFromState();
-  var isLatest = selectedFirmwareIsLatest();
-  var version = info && info.latest_version ? info.latest_version : state.firmwareLatestVersion;
-  var releaseUrl = info && info.release_url ? info.release_url : state.firmwareReleaseUrl;
-  var status = (isLatest ? "Latest public version: " : "Selected firmware version: ") + escHtml(version);
-  if (releaseUrl) {
-    status += ' <a href="' + escAttr(releaseUrl) + '" target="_blank" rel="noopener">release notes</a>';
-  }
-  return status;
-}
-
 function firmwareUpdateControlsVisible() {
   return state.firmwareUpdateControlsSupported === true;
 }
@@ -164,13 +168,13 @@ function syncFirmwareUpdateUi() {
   var show = firmwareUpdateControlsVisible();
   if (els.fwActions) els.fwActions.style.display = show ? "" : "none";
   if (els.fwStatus) els.fwStatus.style.display = show ? "" : "none";
-  if (els.fwVersionField) {
-    els.fwVersionField.style.display = show && firmwareVersionSelectorVisible() ? "" : "none";
-  }
+  if (els.autoUpdatePanel) els.autoUpdatePanel.style.display = show ? "" : "none";
+  if (els.autoUpdateBadge) els.autoUpdateBadge.classList.toggle("sp-hidden", !state.autoUpdate);
   if (els.setAutoUpdateRow) els.setAutoUpdateRow.style.display = show ? "" : "none";
   if (els.updateFreqWrap) {
     els.updateFreqWrap.style.display = show && state.autoUpdate ? "" : "none";
   }
+  syncPreviousFirmwareUi();
 }
 
 function renderFirmwareUpdateStatus() {
@@ -178,33 +182,27 @@ function renderFirmwareUpdateStatus() {
   var cls = "sp-fw-status";
   var status = "";
   var inlineStatus = "";
+  if (els.fwLatestVersion) {
+    if (publicFirmwareReleaseKnown()) {
+      els.fwLatestVersion.textContent = state.firmwareLatestVersion;
+    } else if (state.firmwareChecking) {
+      els.fwLatestVersion.textContent = "Checking\u2026";
+    } else {
+      els.fwLatestVersion.textContent = "Not checked";
+    }
+  }
   if (state.firmwareUpdateState === "INSTALLING") {
     status = state.firmwareInstallStatus || "Installing update\u2026";
     cls += " sp-update-installing";
   } else if (state.firmwareInstallError) {
     status = escHtml(state.firmwareInstallError);
     cls += " sp-update-error";
-  } else if (firmwareInstallAvailable()) {
-    status = publicFirmwareStatusHtml();
-    cls += " sp-update-available";
   } else if (state.firmwareUpdateState === "NO UPDATE") {
-    if (selectedFirmwareMatchesInstalled()) {
-      inlineStatus = selectedFirmwareIsLatest() ? "Up to date" : "Installed";
-    } else if (publicFirmwareReleaseKnown() &&
-        isSpecificFirmwareVersion(state.firmwareVersion) &&
-        !installedFirmwareMatchesPublicRelease()) {
-      status = publicFirmwareStatusHtml();
-    } else {
+    if (installedFirmwareMatchesPublicRelease() || !latestFirmwareInstallAvailable()) {
       inlineStatus = "Up to date";
     }
-  } else if (publicFirmwareReleaseKnown()) {
-    if (selectedFirmwareMatchesInstalled()) {
-      inlineStatus = selectedFirmwareIsLatest() ? "Up to date" : "Installed";
-    } else {
-      status = publicFirmwareStatusHtml();
-    }
   } else if (state.firmwareChecking) {
-    status = "Checking public firmware\u2026";
+    status = "Checking for an update\u2026";
   }
   els.fwStatus.className = cls;
   els.fwStatus.innerHTML = status;
@@ -218,19 +216,13 @@ function renderFirmwareUpdateStatus() {
     if (state.firmwareUpdateState === "INSTALLING") {
       els.fwCheckBtn.disabled = true;
       els.fwCheckBtn.textContent = "Installing\u2026";
-    } else if (selectedFirmwareMatchesInstalled() && !selectedFirmwareIsLatest()) {
-      els.fwCheckBtn.disabled = true;
-      els.fwCheckBtn.textContent = "Installed";
-    } else if (firmwareInstallAvailable()) {
+    } else if (latestFirmwareInstallAvailable()) {
       els.fwCheckBtn.disabled = false;
-      els.fwCheckBtn.textContent = selectedFirmwareIsLatest() ? "Install Update" : "Install Version";
+      els.fwCheckBtn.textContent = "Install Update";
     } else {
       els.fwCheckBtn.disabled = state.firmwareChecking;
       els.fwCheckBtn.textContent = state.firmwareChecking ? "Checking\u2026" : "Check for Update";
     }
-  }
-  if (els.fwVersionSelect) {
-    els.fwVersionSelect.disabled = state.firmwareUpdateState === "INSTALLING" || state.firmwareChecking;
   }
   syncFirmwareUpdateUi();
 }
@@ -332,6 +324,6 @@ function scheduleFirmwareWebOtaFallback() {
     if (!state.firmwareInstallPostPending) return;
     if (firmwareUpdateAvailable()) return;
     if (!publicFirmwareInstallAvailable()) return;
-    installPublicFirmwareViaWebOta();
+    installPublicFirmwareViaWebOta(latestFirmwareInfo());
   }, FIRMWARE_WEB_OTA_FALLBACK_DELAY_MS);
 }

@@ -7,8 +7,7 @@ var FIRMWARE_UNKNOWN_VERSION_LABEL = "Version unknown";
 
 function renderFirmwareVersion() {
   if (!els.fwVersionLabel) return;
-  els.fwVersionLabel.innerHTML = '<span class="sp-fw-label">Installed </span>' +
-    escHtml(firmwareVersionLabel());
+  els.fwVersionLabel.textContent = firmwareVersionLabel();
 }
 
 function setFirmwareVersion(version) {

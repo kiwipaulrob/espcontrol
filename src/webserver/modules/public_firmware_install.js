@@ -25,8 +25,10 @@ function publicFirmwareOtaFilename(info) {
 
 function installPublicFirmwareViaWebOta(info) {
   info = info || selectedFirmwareInfo();
+  var installingLatest = !info ||
+    firmwareVersionsSame(info.latest_version, state.firmwareLatestVersion);
   return getJsonQuietly(publicFirmwareManifestUrl(), function (d) {
-    if (!info || selectedFirmwareIsLatest()) setPublicFirmwareInfo(firmwareInfoFromPublicManifest(d));
+    if (installingLatest) setPublicFirmwareInfo(firmwareInfoFromPublicManifest(d));
   }).then(function () {
     info = info || selectedFirmwareInfo();
     var targetVersion = info && info.latest_version ? info.latest_version : state.firmwareLatestVersion;

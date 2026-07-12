@@ -448,7 +448,6 @@ function buildSettingsPage(parent) {
   appendSettingsSection(config, "System", [
     systemSettingsCards.backupCard,
     systemSettingsCards.firmwareCard,
-    systemSettingsCards.wifiFirmwareCard,
     systemSettingsCards.homeAssistantSettingsCard,
   ]);
 

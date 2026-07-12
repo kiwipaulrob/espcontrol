@@ -19,18 +19,37 @@ function buildSystemSettingsCards() {
   var backupCard = makeCollapsibleCard("Backup", backupBody, true);
 
   var fwBody = document.createElement("div");
+  var fwOverview = document.createElement("div");
+  fwOverview.className = "sp-fw-overview";
 
-  var fwVersionRow = document.createElement("div");
-  fwVersionRow.className = "sp-fw-row";
+  var fwCurrentRow = document.createElement("div");
+  fwCurrentRow.className = "sp-fw-row sp-fw-info-row";
+  var fwCurrentLabel = document.createElement("span");
+  fwCurrentLabel.className = "sp-fw-label";
+  fwCurrentLabel.textContent = "Current version";
   var fwVersionLabel = document.createElement("span");
   fwVersionLabel.className = "sp-fw-version";
-  fwVersionRow.appendChild(fwVersionLabel);
+  fwCurrentRow.appendChild(fwCurrentLabel);
+  fwCurrentRow.appendChild(fwVersionLabel);
   els.fwVersionLabel = fwVersionLabel;
   renderFirmwareVersion();
-  refreshFirmwareVersion();
+
+  var fwLatestRow = document.createElement("div");
+  fwLatestRow.className = "sp-fw-row sp-fw-info-row";
+  var fwLatestLabel = document.createElement("span");
+  fwLatestLabel.className = "sp-fw-label";
+  fwLatestLabel.textContent = "Available version";
+  var fwLatestValue = document.createElement("span");
+  fwLatestValue.className = "sp-fw-version";
+  fwLatestRow.appendChild(fwLatestLabel);
+  fwLatestRow.appendChild(fwLatestValue);
+  els.fwLatestVersion = fwLatestValue;
+
+  fwOverview.appendChild(fwCurrentRow);
+  fwOverview.appendChild(fwLatestRow);
 
   var fwActions = document.createElement("div");
-  fwActions.className = "sp-fw-actions";
+  fwActions.className = "sp-fw-actions sp-fw-actions-full";
   els.fwActions = fwActions;
   var fwInlineStatus = document.createElement("span");
   fwInlineStatus.className = "sp-fw-inline-status";
@@ -40,14 +59,13 @@ function buildSystemSettingsCards() {
   var fwCheckBtn = createActionButton("sp-fw-btn", "Check for Update");
   fwCheckBtn.addEventListener("click", function () {
     if (!firmwareUpdateControlsVisible()) return;
-    if (firmwareInstallAvailable()) {
-      var selectedInfo = selectedFirmwareInfo();
-      var installingLatest = selectedFirmwareIsLatest();
-      var updateReady = installingLatest && firmwareUpdateAvailable();
-      state.firmwareInstallTargetVersion = selectedInfo && selectedInfo.latest_version ?
-        selectedInfo.latest_version :
+    if (latestFirmwareInstallAvailable()) {
+      var latestInfo = latestFirmwareInfo();
+      var updateReady = firmwareUpdateAvailable();
+      state.firmwareInstallTargetVersion = latestInfo && latestInfo.latest_version ?
+        latestInfo.latest_version :
         state.firmwareLatestVersion;
-      state.firmwareInstallPostPending = installingLatest && !updateReady;
+      state.firmwareInstallPostPending = !updateReady;
       state.firmwareChecking = false;
       if (updateReady) {
         state.firmwareUpdateState = "INSTALLING";
@@ -63,8 +81,6 @@ function buildSystemSettingsCards() {
         postFirmwareUpdateCheck();
         scheduleFirmwareWebOtaFallback();
         startFirmwareInstallRefresh();
-      } else {
-        installPublicFirmwareViaWebOta(selectedInfo);
       }
       return;
     }
@@ -84,35 +100,22 @@ function buildSystemSettingsCards() {
     }, 10000);
   });
   fwActions.appendChild(fwCheckBtn);
-  fwVersionRow.appendChild(fwActions);
   els.fwCheckBtn = fwCheckBtn;
-  fwBody.appendChild(fwVersionRow);
+  fwOverview.appendChild(fwActions);
 
   var fwStatus = document.createElement("div");
   fwStatus.className = "sp-fw-status";
-  fwBody.appendChild(fwStatus);
+  fwOverview.appendChild(fwStatus);
   els.fwStatus = fwStatus;
+  fwBody.appendChild(fwOverview);
   renderFirmwareUpdateStatus();
 
-  var fwVersionField = document.createElement("div");
-  fwVersionField.className = "sp-field sp-fw-version-field";
-  fwVersionField.style.display = "none";
-  fwVersionField.appendChild(fieldLabel("Install Version", "sp-set-firmware-version"));
-  var fwVersionSelect = document.createElement("select");
-  fwVersionSelect.className = "sp-select";
-  fwVersionSelect.id = "sp-set-firmware-version";
-  fwVersionSelect.addEventListener("change", function () {
-    state.firmwareSelectedVersion = this.value;
-    renderFirmwareUpdateStatus();
-  });
-  fwVersionField.appendChild(fwVersionSelect);
-  fwBody.appendChild(fwVersionField);
-  els.fwVersionField = fwVersionField;
-  els.fwVersionSelect = fwVersionSelect;
-  syncFirmwareVersionSelect();
+  var firmwareSubpanels = document.createElement("div");
+  firmwareSubpanels.className = "sp-fw-subpanels";
 
+  var autoUpdateBody = document.createElement("div");
   var autoUpdateToggle = toggleRow("Auto Update", "sp-set-auto-update", state.autoUpdate);
-  fwBody.appendChild(autoUpdateToggle.row);
+  autoUpdateBody.appendChild(autoUpdateToggle.row);
   autoUpdateToggle.input.addEventListener("change", function () {
     if (!firmwareUpdateControlsVisible()) {
       syncFirmwareUpdateUi();
@@ -126,7 +129,9 @@ function buildSystemSettingsCards() {
   els.setAutoUpdate = autoUpdateToggle.input;
 
   var freqWrap = document.createElement("div");
+  freqWrap.className = "sp-field";
   freqWrap.style.display = state.autoUpdate ? "" : "none";
+  freqWrap.appendChild(fieldLabel("Update Frequency", "sp-set-update-freq"));
   var freqSelect = document.createElement("select");
   freqSelect.className = "sp-select";
   freqSelect.id = "sp-set-update-freq";
@@ -143,19 +148,23 @@ function buildSystemSettingsCards() {
     postFirmwareUpdateFrequency(state.updateFrequency);
   });
   freqWrap.appendChild(freqSelect);
-  fwBody.appendChild(freqWrap);
+  autoUpdateBody.appendChild(freqWrap);
   els.updateFreqWrap = freqWrap;
   els.setUpdateFreq = freqSelect;
-  syncFirmwareUpdateUi();
 
-  var firmwareCard = makeCollapsibleCard("Firmware", fwBody, true);
+  var autoUpdateBadge = disclosureBadge("On", "Automatic firmware updates on");
+  var autoUpdatePanel = inlineDisclosure("Auto updates", autoUpdateBody, false, autoUpdateBadge);
+  autoUpdatePanel.id = "sp-fw-auto-panel";
+  els.autoUpdateBadge = autoUpdateBadge;
+  els.autoUpdatePanel = autoUpdatePanel;
+  firmwareSubpanels.appendChild(autoUpdatePanel);
 
   var wifiFirmwareBody = document.createElement("div");
   var c6CurrentRow = document.createElement("div");
   c6CurrentRow.className = "sp-fw-row sp-fw-info-row";
   var c6CurrentLabel = document.createElement("span");
   c6CurrentLabel.className = "sp-fw-label";
-  c6CurrentLabel.textContent = "Current C6 Firmware";
+  c6CurrentLabel.textContent = "Current";
   var c6CurrentValue = document.createElement("span");
   c6CurrentValue.className = "sp-fw-version";
   c6CurrentRow.appendChild(c6CurrentLabel);
@@ -167,7 +176,7 @@ function buildSystemSettingsCards() {
   c6LatestRow.className = "sp-fw-row sp-fw-info-row";
   var c6LatestLabel = document.createElement("span");
   c6LatestLabel.className = "sp-fw-label";
-  c6LatestLabel.textContent = "Available C6 Firmware";
+  c6LatestLabel.textContent = "Available";
   var c6LatestValue = document.createElement("span");
   c6LatestValue.className = "sp-fw-version";
   c6LatestRow.appendChild(c6LatestLabel);
@@ -177,9 +186,7 @@ function buildSystemSettingsCards() {
 
   var c6Actions = document.createElement("div");
   c6Actions.className = "sp-fw-actions sp-fw-actions-full";
-  var c6UpdateBtn = document.createElement("button");
-  c6UpdateBtn.className = "sp-fw-btn";
-  c6UpdateBtn.textContent = "Check for Update";
+  var c6UpdateBtn = createActionButton("sp-fw-btn", "Check for Update");
   c6UpdateBtn.addEventListener("click", function () {
     if (!state.c6FirmwareUpdateControlsSupported) return;
     if (c6FirmwareUpdateKnownAvailable() && state.c6FirmwareInstallControlsSupported) {
@@ -209,9 +216,60 @@ function buildSystemSettingsCards() {
   c6Status.className = "sp-fw-status";
   wifiFirmwareBody.appendChild(c6Status);
   els.c6FirmwareStatus = c6Status;
-  var wifiFirmwareCard = makeCollapsibleCard("WiFi", wifiFirmwareBody, true);
-  els.c6FirmwareCard = wifiFirmwareCard;
+  var c6Badge = disclosureBadge("Update available", "WiFi firmware update available");
+  var wifiFirmwarePanel = inlineDisclosure("WiFi firmware", wifiFirmwareBody, false, c6Badge);
+  wifiFirmwarePanel.id = "sp-fw-wifi-panel";
+  els.c6FirmwareBadge = c6Badge;
+  els.c6FirmwareCard = wifiFirmwarePanel;
+  firmwareSubpanels.appendChild(wifiFirmwarePanel);
+
+  var previousFirmwareBody = document.createElement("div");
+  previousFirmwareBody.appendChild(infoPanel(
+    "sp-fw-previous-info",
+    "Installing an older firmware version may remove features or settings added in later versions."
+  ));
+  var fwVersionField = document.createElement("div");
+  fwVersionField.className = "sp-field sp-fw-version-field";
+  fwVersionField.appendChild(fieldLabel("Version", "sp-set-firmware-version"));
+  var fwVersionSelect = document.createElement("select");
+  fwVersionSelect.className = "sp-select";
+  fwVersionSelect.id = "sp-set-firmware-version";
+  fwVersionSelect.addEventListener("change", function () {
+    state.firmwareSelectedVersion = this.value;
+    syncPreviousFirmwareUi();
+  });
+  fwVersionField.appendChild(fwVersionSelect);
+  previousFirmwareBody.appendChild(fwVersionField);
+  els.fwVersionField = fwVersionField;
+  els.fwVersionSelect = fwVersionSelect;
+
+  var previousFirmwareActions = document.createElement("div");
+  previousFirmwareActions.className = "sp-fw-previous-actions";
+  var previousFirmwareInstallBtn = createActionButton("sp-fw-btn", "Install");
+  previousFirmwareInstallBtn.addEventListener("click", function () {
+    var info = selectedPreviousFirmwareInfo();
+    if (!info || !firmwareUpdateControlsVisible()) return;
+    if (!window.confirm("Install older firmware " + info.latest_version + "? The display will restart during installation.")) {
+      return;
+    }
+    installPublicFirmwareViaWebOta(info);
+  });
+  previousFirmwareActions.appendChild(previousFirmwareInstallBtn);
+  previousFirmwareBody.appendChild(previousFirmwareActions);
+  els.fwPreviousInstallBtn = previousFirmwareInstallBtn;
+
+  var previousFirmwarePanel = inlineDisclosure("Previous firmware", previousFirmwareBody, false);
+  previousFirmwarePanel.id = "sp-fw-previous-panel";
+  els.fwPreviousPanel = previousFirmwarePanel;
+  firmwareSubpanels.appendChild(previousFirmwarePanel);
+
+  fwBody.appendChild(firmwareSubpanels);
+  var firmwareCard = makeCollapsibleCard("Firmware", fwBody, true);
+
+  syncFirmwareVersionSelect();
+  syncFirmwareUpdateUi();
   syncC6FirmwareUi();
+  refreshFirmwareVersion();
 
   var homeAssistantSettingsBody = document.createElement("div");
   var haProtocolField = document.createElement("div");
@@ -265,7 +323,6 @@ function buildSystemSettingsCards() {
   return {
     backupCard: backupCard,
     firmwareCard: firmwareCard,
-    wifiFirmwareCard: wifiFirmwareCard,
     homeAssistantSettingsCard: homeAssistantSettingsCard,
   };
 }
