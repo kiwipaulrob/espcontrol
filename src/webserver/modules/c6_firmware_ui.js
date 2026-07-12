@@ -34,15 +34,8 @@ function syncC6FirmwareUi() {
   if (els.c6FirmwareStatus) {
     var cls = "sp-fw-status";
     var status = "";
-    if (state.c6FirmwareInstalling) {
-      status = "Installing WiFi firmware update\u2026";
-      cls += " sp-update-installing";
-    } else if (state.c6FirmwareChecking) {
-      status = "Checking WiFi firmware\u2026";
-    } else if (c6FirmwareUpdateKnownAvailable()) {
-      status = "WiFi firmware update available.";
-      cls += " sp-update-available";
-    } else if (state.c6FirmwareUpdateAvailable) {
+    if (!state.c6FirmwareInstalling && !state.c6FirmwareChecking &&
+        !c6FirmwareUpdateKnownAvailable() && state.c6FirmwareUpdateAvailable) {
       status = state.c6FirmwareUpdateAvailable;
     }
     els.c6FirmwareStatus.className = cls;

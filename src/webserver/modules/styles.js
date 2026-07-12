@@ -522,11 +522,11 @@ var CSS =
   ".sp-fw-version{font-size:.875rem;color:var(--text)}" +
   ".sp-fw-label{font-size:.875rem;color:var(--text2)}" +
   ".sp-fw-actions{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-left:auto}" +
-  ".sp-fw-actions-full{justify-content:flex-start;margin:12px 0 0}" +
+  ".sp-fw-actions-full{justify-content:flex-end;margin:14px 0 0}" +
   ".sp-fw-previous-actions{display:flex;justify-content:flex-end;margin-top:12px}" +
   ".sp-fw-inline-status{display:none;font-size:.8rem;color:#3dd68c;white-space:nowrap}" +
   ".sp-fw-inline-status.sp-visible{display:inline}" +
-  ".sp-fw-status{font-size:.8rem;color:var(--text2);line-height:1.4;margin:-4px 0 12px 0}" +
+  ".sp-fw-status{font-size:.8rem;color:var(--text2);line-height:1.4;margin:8px 0 0;text-align:right}" +
   ".sp-fw-status:empty{display:none}" +
   ".sp-fw-status.sp-update-available{color:#3dd68c}" +
   ".sp-fw-status.sp-update-installing{color:#f9b44e}" +
@@ -590,5 +590,6 @@ var CSS =
   ".sp-backup-btns{flex-direction:column}" +
   ".sp-fw-row{flex-direction:column;align-items:flex-start;gap:12px}" +
   ".sp-fw-actions{width:100%;margin-left:0;justify-content:flex-start;flex-wrap:wrap}" +
+  ".sp-fw-status{text-align:left}" +
   ".sp-fw-actions .sp-fw-btn,.sp-fw-previous-actions .sp-fw-btn{width:100%}" +
   "}";

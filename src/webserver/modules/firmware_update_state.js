@@ -196,18 +196,13 @@ function renderFirmwareUpdateStatus() {
       els.fwLatestVersion.textContent = "Not checked";
     }
   }
-  if (state.firmwareUpdateState === "INSTALLING") {
-    status = state.firmwareInstallStatus || "Installing update\u2026";
-    cls += " sp-update-installing";
-  } else if (state.firmwareInstallError) {
+  if (state.firmwareInstallError) {
     status = escHtml(state.firmwareInstallError);
     cls += " sp-update-error";
   } else if (state.firmwareUpdateState === "NO UPDATE") {
     if (installedFirmwareMatchesPublicRelease() || !latestFirmwareInstallAvailable()) {
       inlineStatus = "Up to date";
     }
-  } else if (state.firmwareChecking) {
-    status = "Checking for an update\u2026";
   }
   els.fwStatus.className = cls;
   els.fwStatus.innerHTML = status;
