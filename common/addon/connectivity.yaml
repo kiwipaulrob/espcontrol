@@ -69,6 +69,7 @@ wifi:
           - script.execute: wifi_reconnect_flow
 
 api:
+  max_connections: 15
   on_client_connected:
     - script.stop: ha_reconnect_flow
     - script.execute: ha_restore_after_api
